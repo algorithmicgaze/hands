@@ -32,7 +32,12 @@
     ctx.fillRect(0, 0, canvasElement.width, 50);
     ctx.strokeStyle = "red";
     ctx.lineWidth = 2;
-    ctx.strokeRect(frameStartPixels, 1, frameEndPixels - frameStartPixels, 49);
+    ctx.strokeRect(
+      frameStartPixels,
+      1.5,
+      frameEndPixels - frameStartPixels,
+      48
+    );
     ctx.fillStyle = "red";
 
     ctx.fillRect(frameStartPixels - 3, 20, 5, 10);
