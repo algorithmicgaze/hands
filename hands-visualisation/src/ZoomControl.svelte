@@ -13,13 +13,12 @@
 
   onMount(() => {
     ctx = canvasElement.getContext("2d");
+    draw($frameIndex, $frameStart, $frameEnd);
     // draw();
   });
 
   function draw(frameIndex, frameStart, frameEnd) {
     if (!canvasElement) return;
-    ctx.fillStyle = "white";
-    ctx.fillRect(0, 0, canvasElement.width, canvasElement.height);
 
     drawOverview(frameStart, frameEnd);
     drawFrameIndex(frameIndex);
@@ -29,15 +28,15 @@
     let frameWidth = canvasElement.width / frameCount;
     let frameStartPixels = frameStart * frameWidth;
     let frameEndPixels = frameEnd * frameWidth;
-    ctx.fillStyle = "lightgray";
+    ctx.fillStyle = "#333";
     ctx.fillRect(0, 0, canvasElement.width, 50);
     ctx.strokeStyle = "red";
     ctx.lineWidth = 2;
-    ctx.strokeRect(frameStartPixels, 0, frameEndPixels - frameStartPixels, 50);
+    ctx.strokeRect(frameStartPixels, 1, frameEndPixels - frameStartPixels, 49);
     ctx.fillStyle = "red";
 
-    ctx.fillRect(frameStartPixels - 2, 20, 5, 10);
-    ctx.fillRect(frameEndPixels - 2, 20, 5, 10);
+    ctx.fillRect(frameStartPixels - 3, 20, 5, 10);
+    ctx.fillRect(frameEndPixels - 3, 20, 5, 10);
 
     // ctx.beginPath();
     // ctx.moveTo($frameIndex * frameWidth, 0);

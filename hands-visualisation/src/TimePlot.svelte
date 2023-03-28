@@ -4,10 +4,8 @@
   import { mapValue } from "./math";
 
   export let data;
-  export let min;
-  export let max;
+  export let bone;
 
-  export let channel;
   let canvasElement;
   let ctx;
   let tooltipFrame;
@@ -22,25 +20,61 @@
 
   function draw(frameIndex, frameStart, frameEnd) {
     if (!canvasElement) return;
-    ctx.fillStyle = "white";
+    ctx.fillStyle = "#333";
     ctx.fillRect(0, 0, canvasElement.width, canvasElement.height);
     drawZoomed(frameIndex, frameStart, frameEnd);
   }
 
   function drawZoomed(frameIndex, frameStart, frameEnd) {
     // Draw the zoomed in portion of the timeline
-    let vals = [];
+    let xValues = [];
+    let yValues = [];
+    let zValues = [];
     ctx.fillStyle = "black";
+
+    let redChannel = `${bone}_x`;
+    let greenChannel = `${bone}_y`;
+    let blueChannel = `${bone}_z`;
 
     for (let x = 0; x < canvasElement.width; x++) {
       let frame = Math.floor(
         frameStart + (frameEnd - frameStart) * (x / canvasElement.width)
       );
-      let y = parseFloat(data[frame][channel]);
-      vals.push(y);
-      y = mapValue(y, min, max, 0, canvasElement.height);
-      ctx.fillRect(x, 20 + y, 1, 1);
+      xValues.push(Math.abs(parseFloat(data[frame][redChannel])));
+      yValues.push(Math.abs(parseFloat(data[frame][greenChannel])));
+      zValues.push(Math.abs(parseFloat(data[frame][blueChannel])));
     }
+    // Find the min/max of vals
+    let min = Math.min(...xValues, ...yValues, ...zValues) - 10;
+    let max = Math.max(...xValues, ...yValues, ...zValues) + 10;
+
+    // Draw all channels
+    drawChannel(xValues, min, max, "#FFB6C1");
+    drawChannel(yValues, min, max, "#F0E68C");
+    drawChannel(zValues, min, max, "#ADD8E6");
+
+    //ctx.fillStyle = "black";
+    // ctx.strokeStyle("red");
+    // ctx.beginPath();
+    // for (let x = 0; x < canvasElement.width; x++) {
+    //   let y = mapValue(vals[x], min, max, 0, canvasElement.height);
+    //   if (x === 0) {
+    //     ctx.moveTo(x, y);
+    //   } else {
+    //     ctx.lineTo(x, y);
+    //   }
+    // }
+    // ctx.stroke();
+
+    // for (let x = 0; x < canvasElement.width; x++) {
+    //   let frame = Math.floor(
+    //     frameStart + (frameEnd - frameStart) * (x / canvasElement.width)
+    //   );
+    //   let y = parseFloat(data[frame][channel]);
+    //   vals.push(y);
+    //   y = mapValue(y, min, max, canvasElement.height, 0);
+    //   ctx.fillRect(x, 20 + y, 1, 1);
+    // }
 
     // Find the min/max of vals
     // let min = Math.min(...vals) - 20;
@@ -64,15 +98,35 @@
     ctx.stroke();
   }
 
+  function drawChannel(values, min, max, strokeStyle) {
+    // debugger;
+    ctx.strokeStyle = strokeStyle;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let x = 0; x < canvasElement.width; x++) {
+      let y = mapValue(values[x], min, max, 0, canvasElement.height);
+      if (x === 0) {
+        ctx.moveTo(x, y);
+      } else {
+        ctx.lineTo(x, y);
+      }
+    }
+    ctx.stroke();
+  }
+
   function onMouseMove(e) {
     let windowWidth = $frameEnd - $frameStart;
     let frameWidth = windowWidth / 1000;
     let frame = Math.floor($frameStart + (windowWidth * e.offsetX) / 1000);
 
     // let frame = Math.floor(e.offsetX / );
-    let value = parseFloat(data[frame][channel]);
+    let xValue = parseFloat(data[frame][`${bone}_x`]);
+    let yValue = parseFloat(data[frame][`${bone}_y`]);
+    let zValue = parseFloat(data[frame][`${bone}_z`]);
     tooltipFrame = frame;
-    tooltipValue = value;
+    tooltipValue = tooltipValue = `X ${xValue.toFixed(2)}, Y ${yValue.toFixed(
+      2
+    )}, Z ${zValue.toFixed(2)}`;
     tooltipX = e.offsetX;
     frameIndex.set(frame);
   }
@@ -81,9 +135,13 @@
     tooltipVisible = true;
     let frameWidth = canvasElement.width / data.length;
     let frame = Math.floor(e.offsetX / frameWidth);
-    let value = parseFloat(data[frame][channel]);
+    let xValue = parseFloat(data[frame][`${bone}_x`]);
+    let yValue = parseFloat(data[frame][`${bone}_y`]);
+    let zValue = parseFloat(data[frame][`${bone}_z`]);
     tooltipFrame = frame;
-    tooltipValue = value;
+    tooltipValue = `X ${xValue.toFixed(2)}, Y ${yValue.toFixed(
+      2
+    )}, Z ${zValue.toFixed(2)}`;
   }
 
   function hideTooltip(e) {
@@ -96,7 +154,7 @@
 </script>
 
 <div class="graph">
-  <h2>{channel}</h2>
+  <h2>{bone}</h2>
   <canvas
     width="1000"
     height="100"
@@ -142,6 +200,7 @@
 
   .tooltip {
     position: absolute;
+    top: -30px;
     display: flex;
     flex-direction: column;
     align-items: center;

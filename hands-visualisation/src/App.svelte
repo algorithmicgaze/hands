@@ -6,7 +6,8 @@
 
   const CSV_URL =
     "https://enigmeta.s3.amazonaws.com/2023-hands/mocap/Flute2Slower_OnlyHands.csv";
-  // const CSV_URL = "/Flute2Slower.csv";
+  // const CSV_URL = "/Flute2Slower_OnlyHands.csv";
+  // const CSV_URL = "/flute2_pos.csv";
 
   let isLoading = true;
   let data = [];
@@ -17,7 +18,9 @@
     data = csvParse(csv);
     console.log(data);
     isLoading = false;
-    frameEnd.set(data.length);
+    if ($frameEnd === 0) {
+      frameEnd.set(data.length);
+    }
   }
 
   // let frameIndex = 0;
@@ -33,12 +36,9 @@
     <p>Loaded {data.length} rows</p>
     <ZoomControl {data} />
 
-    <TimePlot {data} channel="RightInHandMiddle_x" min={-100} max={100} />
-    <TimePlot {data} channel="RightInHandMiddle_y" min={0} max={180} />
-    <TimePlot {data} channel="RightInHandMiddle_z" min={20} max={100} />
-
-    <TimePlot {data} channel="RightHandMiddle1_x" min={-100} max={100} />
-    <TimePlot {data} channel="RightHandMiddle1_y" min={0} max={180} />
-    <TimePlot {data} channel="RightHandMiddle1_z" min={20} max={100} />
+    <TimePlot {data} bone="RightHand" />
+    <TimePlot {data} bone="RightInHandMiddle" />
+    <TimePlot {data} bone="RightHandMiddle1" />
+    <TimePlot {data} bone="RightHandMiddle2" />
   {/if}
 </main>
