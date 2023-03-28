@@ -32,21 +32,23 @@
     let zValues = [];
     ctx.fillStyle = "black";
 
-    let redChannel = `${bone}_x`;
-    let greenChannel = `${bone}_y`;
-    let blueChannel = `${bone}_z`;
+    let xChannel = `${bone}_Xrotation`;
+    let yChannel = `${bone}_Yrotation`;
+    let zChannel = `${bone}_Zrotation`;
 
     for (let x = 0; x < canvasElement.width; x++) {
       let frame = Math.floor(
         frameStart + (frameEnd - frameStart) * (x / canvasElement.width)
       );
-      xValues.push(Math.abs(parseFloat(data[frame][redChannel])));
-      yValues.push(Math.abs(parseFloat(data[frame][greenChannel])));
-      zValues.push(Math.abs(parseFloat(data[frame][blueChannel])));
+      xValues.push(Math.abs(parseFloat(data[frame][xChannel])));
+      yValues.push(Math.abs(parseFloat(data[frame][yChannel])));
+      zValues.push(Math.abs(parseFloat(data[frame][zChannel])));
     }
     // Find the min/max of vals
-    let min = Math.min(...xValues, ...yValues, ...zValues) - 10;
-    let max = Math.max(...xValues, ...yValues, ...zValues) + 10;
+    // let min = Math.min(...xValues, ...yValues, ...zValues) - 10;
+    // let max = Math.max(...xValues, ...yValues, ...zValues) + 10;
+    let min = Math.min(...zValues) - 10;
+    let max = Math.max(...zValues) + 10;
 
     // Draw all channels
     drawChannel(xValues, min, max, "#FFB6C1");
@@ -115,33 +117,36 @@
   }
 
   function onMouseMove(e) {
-    let windowWidth = $frameEnd - $frameStart;
-    let frameWidth = windowWidth / 1000;
-    let frame = Math.floor($frameStart + (windowWidth * e.offsetX) / 1000);
+    showTooltip(e);
+    //   let frame = Math.floor($frameStart + (windowWidth * e.offsetX) / 1000);
 
-    // let frame = Math.floor(e.offsetX / );
-    let xValue = parseFloat(data[frame][`${bone}_x`]);
-    let yValue = parseFloat(data[frame][`${bone}_y`]);
-    let zValue = parseFloat(data[frame][`${bone}_z`]);
-    tooltipFrame = frame;
-    tooltipValue = tooltipValue = `X ${xValue.toFixed(2)}, Y ${yValue.toFixed(
-      2
-    )}, Z ${zValue.toFixed(2)}`;
-    tooltipX = e.offsetX;
-    frameIndex.set(frame);
+    //   // let frame = Math.floor(e.offsetX / );
+    //   let xValue = parseFloat(data[frame][`${bone}_Xrotation`]);
+    //   let yValue = parseFloat(data[frame][`${bone}_Yrotation`]);
+    //   let zValue = parseFloat(data[frame][`${bone}_Zrotation`]);
+    //   tooltipFrame = frame;
+    //   tooltipValue = tooltipValue = `X ${xValue.toFixed(2)}, Y ${yValue.toFixed(
+    //     2
+    //   )}, Z ${zValue.toFixed(2)}`;
+    //   tooltipX = e.offsetX;
+    //   frameIndex.set(frame);
   }
 
   function showTooltip(e) {
     tooltipVisible = true;
-    let frameWidth = canvasElement.width / data.length;
-    let frame = Math.floor(e.offsetX / frameWidth);
-    let xValue = parseFloat(data[frame][`${bone}_x`]);
-    let yValue = parseFloat(data[frame][`${bone}_y`]);
-    let zValue = parseFloat(data[frame][`${bone}_z`]);
+    let windowWidth = $frameEnd - $frameStart;
+    let frameWidth = windowWidth / 1000;
+    let frame = Math.floor($frameStart + (windowWidth * e.offsetX) / 1000);
+
+    let xValue = parseFloat(data[frame][`${bone}_Xrotation`]);
+    let yValue = parseFloat(data[frame][`${bone}_Yrotation`]);
+    let zValue = parseFloat(data[frame][`${bone}_Zrotation`]);
     tooltipFrame = frame;
     tooltipValue = `X ${xValue.toFixed(2)}, Y ${yValue.toFixed(
       2
     )}, Z ${zValue.toFixed(2)}`;
+    tooltipX = e.offsetX;
+    frameIndex.set(frame);
   }
 
   function hideTooltip(e) {

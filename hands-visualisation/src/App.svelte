@@ -5,9 +5,9 @@
   import { frameIndex, frameStart, frameEnd } from "./stores";
 
   const CSV_URL =
-    "https://enigmeta.s3.amazonaws.com/2023-hands/mocap/Flute2Slower_OnlyHands.csv";
+    "https://enigmeta.s3.amazonaws.com/2023-hands/mocap/flute2_minimal.csv";
   // const CSV_URL = "/Flute2Slower_OnlyHands.csv";
-  // const CSV_URL = "/flute2_pos.csv";
+  // const CSV_URL = "/flute2.csv";
 
   let isLoading = true;
   let data = [];
@@ -36,9 +36,16 @@
     <p>Loaded {data.length} rows</p>
     <ZoomControl {data} />
 
-    <TimePlot {data} bone="RightHand" />
-    <TimePlot {data} bone="RightInHandMiddle" />
+    <TimePlot {data} bone="RightHandIndex1" />
     <TimePlot {data} bone="RightHandMiddle1" />
-    <TimePlot {data} bone="RightHandMiddle2" />
+    <TimePlot {data} bone="RightHandRing1" />
+    <TimePlot {data} bone="RightHandPinky1" />
+    <TimePlot {data} bone="RightHandThumb1" />
+
+    <TimePlot {data} bone="LeftHandIndex1" />
+    <TimePlot {data} bone="LeftHandMiddle1" />
+    <TimePlot {data} bone="LeftHandRing1" />
+    <TimePlot {data} bone="LeftHandPinky1" />
+    <TimePlot {data} bone="LeftHandThumb1" />
   {/if}
 </main>
