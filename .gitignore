@@ -2,3 +2,7 @@ node_modules/
 .DS_Store
 _data/
 *.csv
+*.bvh
+*.pt
+.ipynb_checkpoints/
+
