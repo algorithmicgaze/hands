@@ -36,32 +36,35 @@ def quaternion_to_euler(x, y, z, w):
     return roll, pitch, yaw
 
 
-def update_plot(roll, pitch, yaw):
-    global yaws, pitches, rolls
-    # roll, pitch, yaw = get_euler_angles()
+def update_plot(x, y, z, w):
+    global xs, ys, zs, ws
 
-    yaws.append(yaw)
-    pitches.append(pitch)
-    rolls.append(roll)
+    xs.append(x)
+    ys.append(y)
+    zs.append(z)
+    ws.append(w)
 
-    if len(yaws) > buffer_size:
-        yaws.popleft()
-        pitches.popleft()
-        rolls.popleft()
+    if len(xs) > buffer_size:
+        xs.popleft()
+        ys.popleft()
+        zs.popleft()
+        ws.popleft()
 
     plt.cla()
-    plt.plot(yaws, label="Yaw")
-    plt.plot(pitches, label="Pitch")
-    plt.plot(rolls, label="Roll")
+    plt.plot(xs, label="X")
+    plt.plot(ys, label="Y")
+    plt.plot(zs, label="Z")
+    plt.plot(ws, label="W")
     plt.legend(loc="upper right")
     plt.ylim(-np.pi, np.pi)
-    plt.pause(0.00001)
+    plt.pause(0.0001)
 
 
 buffer_size = 100
-yaws = deque()
-pitches = deque()
-rolls = deque()
+xs = deque()
+ys = deque()
+zs = deque()
+ws = deque()
 
 
 print(f"Listening for incoming data on {UDP_IP}:{UDP_PORT}")
@@ -69,7 +72,7 @@ print(f"Listening for incoming data on {UDP_IP}:{UDP_PORT}")
 while True:
     try:
         # Receive data from the socket
-        data, addr = sock.recvfrom(4096)  # Buffer size is 4096 bytes
+        data, addr = sock.recvfrom(16384)  # Buffer size is 4096 bytes
 
         d = frame.decompress(data)  # .decode('utf-8')
         data = json.loads(d)
@@ -81,7 +84,7 @@ while True:
         ri_y = rightIndexProximal["rotation"]["y"]
         ri_z = rightIndexProximal["rotation"]["z"]
         ri_w = rightIndexProximal["rotation"]["w"]
-        ri_roll, ri_pitch, ri_yaw = quaternion_to_euler(ri_x, ri_y, ri_z, ri_w)
+        # ri_roll, ri_pitch, ri_yaw = quaternion_to_euler(ri_x, ri_y, ri_z, ri_w)
 
         # rightIndexProximal = body["rightIndexMedial"]
         # ri_x = rightIndexProximal["rotation"]["x"]
@@ -89,7 +92,7 @@ while True:
         # ri_z = rightIndexProximal["rotation"]["z"]
         # ri_w = rightIndexProximal["rotation"]["w"]
         # ri_roll, ri_pitch, ri_yaw = quaternion_to_euler(ri_x, ri_y, ri_z, ri_w)
-        update_plot(ri_roll, ri_pitch, ri_yaw)
+        update_plot(ri_x, ri_y, ri_z, ri_w)
         # print(
         #     "Right Index Medial: Roll: {:.3f}, Pitch: {:.3f}, Yaw: {:.3f}".format(
         #         ri_roll, ri_pitch, ri_yaw
