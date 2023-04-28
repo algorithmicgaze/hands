@@ -3,8 +3,9 @@
 
 #define MIN(a,b) (((a)<(b))?(a):(b))
 
-const char* ssid ="CS-IoT";
-const char* password = "SLA-JD1PDcs!";
+const char* ssid_list[] = {"CS-IoT", "WiFi-2.4-CAB0"};
+const char* password_list[] = {"SLA-JD1PDcs!", "wr43kdnz2a7xm"};
+const int num_networks = 2;
 
 const char* mqttServer = "lieme.cloud.shiftr.io";
 const int mqttPort = 1883;
@@ -40,14 +41,38 @@ void setup() {
   pinMode(seventh, OUTPUT);
   pinMode(eight, OUTPUT);
   pinMode(nine, OUTPUT);
-  WiFi.begin(ssid, password);
-  Serial.println("connecting to wifi");
-  while(WiFi.status() != WL_CONNECTED){
-    delay(500);
-    Serial.print(".");
+
+  WiFi.mode(WIFI_STA);
+  WiFi.disconnect();
+  
+  for (int i = 0; i < num_networks; i++) {
+    const char* ssid = ssid_list[i];
+    const char* password = password_list[i];
+
+    Serial.print("Connecting to ");
+    Serial.println(ssid);
+    
+    WiFi.begin(ssid, password);
+    
+    int retries = 0;
+    while (WiFi.status() != WL_CONNECTED && retries < 10) {
+      delay(500);
+      Serial.print(".");
+      retries++;
+    }
+    
+    if (WiFi.status() == WL_CONNECTED) {
+      Serial.println("");
+      Serial.println("WiFi connected");
+      Serial.println("IP address: ");
+      Serial.println(WiFi.localIP());
+      break;  // Exit the loop if a successful connection is made
+    } else {
+      Serial.println("");
+      Serial.println("Connection failed");
+    }
   }
-  Serial.print("connected to ");
-  Serial.println(WiFi.localIP());
+
   client.setServer(mqttServer, mqttPort);
   client.setCallback(onMessage);
 }
@@ -130,4 +155,18 @@ void onMessage(const char* topic, byte* payload, unsigned int length) {
   Serial.println("message received:");
   Serial.println(buffer);
   //Serial.println(message);
+
+  if (message[0] == '1') {
+    digitalWrite(first, HIGH);
+  } else {
+    digitalWrite(first, LOW);
+  }
+
+  if (message[1] == '1') {
+    digitalWrite(second, HIGH);
+  } else {
+    digitalWrite(second, LOW);
+  }
+  // more to follow
+
 }
