@@ -57,7 +57,7 @@ void reconnect() {
     if (client.connect(clientId.c_str(), mqttUser, mqttPassword)) {
       Serial.println(" OK!");
       client.publish("chat", "esp32_connected");
-      client.subscribe("sms");
+      client.subscribe("hands");
 
     } else {
       Serial.print("failed, rc=");
