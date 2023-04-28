@@ -1,9 +1,12 @@
 import math
-
+from collections import deque
 import os
 import socket
 import json
 from lz4 import frame
+import matplotlib.pyplot as plt
+import numpy as np
+
 
 # Configure the UDP receiver
 UDP_IP = "0.0.0.0"  # Listens on all available interfaces
@@ -33,6 +36,34 @@ def quaternion_to_euler(x, y, z, w):
     return roll, pitch, yaw
 
 
+def update_plot(roll, pitch, yaw):
+    global yaws, pitches, rolls
+    # roll, pitch, yaw = get_euler_angles()
+
+    yaws.append(yaw)
+    pitches.append(pitch)
+    rolls.append(roll)
+
+    if len(yaws) > buffer_size:
+        yaws.popleft()
+        pitches.popleft()
+        rolls.popleft()
+
+    plt.cla()
+    plt.plot(yaws, label="Yaw")
+    plt.plot(pitches, label="Pitch")
+    plt.plot(rolls, label="Roll")
+    plt.legend(loc="upper right")
+    plt.ylim(-np.pi, np.pi)
+    plt.pause(0.00001)
+
+
+buffer_size = 100
+yaws = deque()
+pitches = deque()
+rolls = deque()
+
+
 print(f"Listening for incoming data on {UDP_IP}:{UDP_PORT}")
 
 while True:
@@ -40,17 +71,10 @@ while True:
         # Receive data from the socket
         data, addr = sock.recvfrom(4096)  # Buffer size is 4096 bytes
 
-        # Decode and parse the JSON data
-        # print(data[:8])
-        # json_data = json.loads(data.decode("utf-8"))
-
         d = frame.decompress(data)  # .decode('utf-8')
         data = json.loads(d)
         actor = data["scene"]["actors"][0]
-        # print(actor)
         body = actor["body"]
-        # pos = body["leftIndexProximal"]["rotation"]
-        # print(pos["x"], pos["y"], pos["z"])
 
         rightIndexProximal = body["rightIndexProximal"]
         ri_x = rightIndexProximal["rotation"]["x"]
@@ -58,23 +82,19 @@ while True:
         ri_z = rightIndexProximal["rotation"]["z"]
         ri_w = rightIndexProximal["rotation"]["w"]
         ri_roll, ri_pitch, ri_yaw = quaternion_to_euler(ri_x, ri_y, ri_z, ri_w)
+
+        # rightIndexProximal = body["rightIndexMedial"]
+        # ri_x = rightIndexProximal["rotation"]["x"]
+        # ri_y = rightIndexProximal["rotation"]["y"]
+        # ri_z = rightIndexProximal["rotation"]["z"]
+        # ri_w = rightIndexProximal["rotation"]["w"]
+        # ri_roll, ri_pitch, ri_yaw = quaternion_to_euler(ri_x, ri_y, ri_z, ri_w)
+        update_plot(ri_roll, ri_pitch, ri_yaw)
         # print(
-        #     "Right Index Proximal: Roll: {:.3f}, Pitch: {:.3f}, Yaw: {:.3f}".format(
+        #     "Right Index Medial: Roll: {:.3f}, Pitch: {:.3f}, Yaw: {:.3f}".format(
         #         ri_roll, ri_pitch, ri_yaw
         #     )
         # )
-
-        rightIndexProximal = body["rightIndexMedial"]
-        ri_x = rightIndexProximal["rotation"]["x"]
-        ri_y = rightIndexProximal["rotation"]["y"]
-        ri_z = rightIndexProximal["rotation"]["z"]
-        ri_w = rightIndexProximal["rotation"]["w"]
-        ri_roll, ri_pitch, ri_yaw = quaternion_to_euler(ri_x, ri_y, ri_z, ri_w)
-        print(
-            "Right Index Medial: Roll: {:.3f}, Pitch: {:.3f}, Yaw: {:.3f}".format(
-                ri_roll, ri_pitch, ri_yaw
-            )
-        )
 
         # json = json.loads(d)
 
