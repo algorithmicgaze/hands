@@ -3,6 +3,7 @@
 
 #define MIN(a,b) (((a)<(b))?(a):(b))
 
+// todo: add ine home - router 
 const char* ssid_list[] = {"CS-IoT", "WiFi-2.4-CAB0"};
 const char* password_list[] = {"SLA-JD1PDcs!", "wr43kdnz2a7xm"};
 const int num_networks = 2;
