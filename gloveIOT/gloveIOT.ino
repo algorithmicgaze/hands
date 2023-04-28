@@ -1,6 +1,8 @@
 #include <PubSubClient.h>
 #include <WiFi.h>
 
+#define MIN(a,b) (((a)<(b))?(a):(b))
+
 const char* ssid ="CS-IoT";
 const char* password = "SLA-JD1PDcs!";
 
