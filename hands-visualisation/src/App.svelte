@@ -1,31 +1,30 @@
 <script>
-  import { csvParse } from "d3-dsv";
   import ZoomControl from "./ZoomControl.svelte";
   import TimePlot from "./TimePlot.svelte";
   import { frameIndex, frameStart, frameEnd } from "./stores";
+  import { parseBvh } from "./bvh-parser";
 
-  const CSV_URL =
-    "https://enigmeta.s3.amazonaws.com/2023-hands/mocap/flute2_minimal.csv";
-  // const CSV_URL = "/Flute2Slower_OnlyHands.csv";
-  // const CSV_URL = "/flute2.csv";
+  const BVH_URL =
+    "https://algorithmicgaze.s3.amazonaws.com/projects/2022-hands/mocap/2023-05-25-rec1.bvh";
 
   let isLoading = true;
   let data = [];
 
-  async function fetchCsvFile() {
-    const response = await fetch(CSV_URL);
-    const csv = await response.text();
-    data = csvParse(csv);
-    console.log(data);
+  async function fetchBvhFile() {
+    const response = await fetch(BVH_URL);
+    const text = await response.text();
+    const bones = parseBvh(text);
+    console.log(bones);
+    data = bones;
     isLoading = false;
     if ($frameEnd === 0) {
-      frameEnd.set(data.length);
+      frameEnd.set(bones[0].frames.length);
     }
   }
 
   // let frameIndex = 0;
 
-  fetchCsvFile();
+  fetchBvhFile();
 </script>
 
 <main>
@@ -36,16 +35,16 @@
     <p>Loaded {data.length} rows</p>
     <ZoomControl {data} />
 
-    <TimePlot {data} bone="RightHandIndex1" />
-    <TimePlot {data} bone="RightHandMiddle1" />
-    <TimePlot {data} bone="RightHandRing1" />
-    <TimePlot {data} bone="RightHandPinky1" />
-    <TimePlot {data} bone="RightHandThumb1" />
+    <TimePlot {data} bone="RightFinger1Proximal" />
+    <TimePlot {data} bone="RightFinger2Proximal" />
+    <TimePlot {data} bone="RightFinger3Proximal" />
+    <TimePlot {data} bone="RightFinger4Proximal" />
+    <TimePlot {data} bone="RightFinger5Proximal" />
 
-    <TimePlot {data} bone="LeftHandIndex1" />
-    <TimePlot {data} bone="LeftHandMiddle1" />
-    <TimePlot {data} bone="LeftHandRing1" />
-    <TimePlot {data} bone="LeftHandPinky1" />
-    <TimePlot {data} bone="LeftHandThumb1" />
+    <TimePlot {data} bone="LeftFinger1Proximal" />
+    <TimePlot {data} bone="LeftFinger2Proximal" />
+    <TimePlot {data} bone="LeftFinger3Proximal" />
+    <TimePlot {data} bone="LeftFinger4Proximal" />
+    <TimePlot {data} bone="LeftFinger5Proximal" />
   {/if}
 </main>

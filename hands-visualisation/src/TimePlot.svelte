@@ -18,6 +18,11 @@
     draw($frameIndex, $frameStart, $frameEnd);
   });
 
+  /**
+   * @param {number} frameIndex
+   * @param {number} frameStart
+   * @param {number} frameEnd
+   */
   function draw(frameIndex, frameStart, frameEnd) {
     if (!canvasElement) return;
     ctx.fillStyle = "#333";
@@ -25,24 +30,31 @@
     drawZoomed(frameIndex, frameStart, frameEnd);
   }
 
+  /**
+   * @param {number} frameIndex
+   * @param {number} frameStart
+   * @param {number} frameEnd
+   */
   function drawZoomed(frameIndex, frameStart, frameEnd) {
+    let boneData = data.find((d) => d.name === bone);
     // Draw the zoomed in portion of the timeline
     let xValues = [];
     let yValues = [];
     let zValues = [];
     ctx.fillStyle = "black";
 
-    let xChannel = `${bone}_Xrotation`;
-    let yChannel = `${bone}_Yrotation`;
-    let zChannel = `${bone}_Zrotation`;
+    // let xChannel = `${bone}_Xrotation`;
+    // let yChannel = `${bone}_Yrotation`;
+    // let zChannel = `${bone}_Zrotation`;
 
     for (let x = 0; x < canvasElement.width; x++) {
       let frame = Math.floor(
         frameStart + (frameEnd - frameStart) * (x / canvasElement.width)
       );
-      xValues.push(Math.abs(parseFloat(data[frame][xChannel])));
-      yValues.push(Math.abs(parseFloat(data[frame][yChannel])));
-      zValues.push(Math.abs(parseFloat(data[frame][zChannel])));
+      let frameData = boneData.frames[frame];
+      xValues.push(frameData.rotation[0]);
+      yValues.push(frameData.rotation[1]);
+      zValues.push(frameData.rotation[2]);
     }
     // Find the min/max of vals
     // let min = Math.min(...xValues, ...yValues, ...zValues) - 10;
@@ -100,6 +112,12 @@
     ctx.stroke();
   }
 
+  /**
+   * @param {any[]} values
+   * @param {number} min
+   * @param {number} max
+   * @param {string} strokeStyle
+   */
   function drawChannel(values, min, max, strokeStyle) {
     // debugger;
     ctx.strokeStyle = strokeStyle;
@@ -116,6 +134,9 @@
     ctx.stroke();
   }
 
+  /**
+   * @param {any} e
+   */
   function onMouseMove(e) {
     showTooltip(e);
     //   let frame = Math.floor($frameStart + (windowWidth * e.offsetX) / 1000);
@@ -132,15 +153,21 @@
     //   frameIndex.set(frame);
   }
 
+  /**
+   * @param {{ offsetX: number; }} e
+   */
   function showTooltip(e) {
     tooltipVisible = true;
     let windowWidth = $frameEnd - $frameStart;
     let frameWidth = windowWidth / 1000;
     let frame = Math.floor($frameStart + (windowWidth * e.offsetX) / 1000);
 
-    let xValue = parseFloat(data[frame][`${bone}_Xrotation`]);
-    let yValue = parseFloat(data[frame][`${bone}_Yrotation`]);
-    let zValue = parseFloat(data[frame][`${bone}_Zrotation`]);
+    let boneData = data.find((d) => d.name === bone);
+    let frameData = boneData.frames[frame];
+
+    let xValue = frameData.rotation[0];
+    let yValue = frameData.rotation[1];
+    let zValue = frameData.rotation[2];
     tooltipFrame = frame;
     tooltipValue = `X ${xValue.toFixed(2)}, Y ${yValue.toFixed(
       2
@@ -149,6 +176,9 @@
     frameIndex.set(frame);
   }
 
+  /**
+   * @param {any} e
+   */
   function hideTooltip(e) {
     tooltipVisible = false;
   }
