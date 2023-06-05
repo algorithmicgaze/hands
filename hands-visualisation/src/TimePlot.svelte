@@ -12,9 +12,22 @@
   let tooltipValue;
   let tooltipVisible;
   let tooltipX;
+  let graphMin = Infinity,
+    graphMax = -Infinity;
 
   onMount(() => {
     ctx = canvasElement.getContext("2d");
+    let boneData = data.find((d) => d.name === bone);
+    for (let i = 0; i < boneData.frames.length; i++) {
+      let frameData = boneData.frames[i];
+      let rx = frameData.rotation[0];
+      let ry = frameData.rotation[1];
+      let rz = frameData.rotation[2];
+      graphMin = Math.min(graphMin, rx, ry, rz);
+      graphMax = Math.max(graphMax, rx, ry, rz);
+    }
+    graphMin -= 10;
+    graphMax += 10;
     draw($frameIndex, $frameStart, $frameEnd);
   });
 
@@ -59,13 +72,13 @@
     // Find the min/max of vals
     // let min = Math.min(...xValues, ...yValues, ...zValues) - 10;
     // let max = Math.max(...xValues, ...yValues, ...zValues) + 10;
-    let min = Math.min(...zValues) - 10;
-    let max = Math.max(...zValues) + 10;
+    // let min = Math.min(...zValues) - 10;
+    // let max = Math.max(...zValues) + 10;
 
     // Draw all channels
-    drawChannel(xValues, min, max, "#FFB6C1");
-    drawChannel(yValues, min, max, "#F0E68C");
-    drawChannel(zValues, min, max, "#ADD8E6");
+    drawChannel(xValues, graphMin, graphMax, "#FFB6C1");
+    drawChannel(yValues, graphMin, graphMax, "#F0E68C");
+    drawChannel(zValues, graphMin, graphMax, "#ADD8E6");
 
     //ctx.fillStyle = "black";
     // ctx.strokeStyle("red");

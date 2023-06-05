@@ -18,7 +18,7 @@
     data = bones;
     isLoading = false;
     if ($frameEnd === 0) {
-      frameEnd.set(bones[0].frames.length);
+      frameEnd.set(bones[0].frames.length - 1);
     }
   }
 
