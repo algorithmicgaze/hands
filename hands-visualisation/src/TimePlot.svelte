@@ -5,11 +5,13 @@
 
   export let data;
   export let bone;
+  export let drawMode;
 
   let canvasElement;
   let ctx;
   let tooltipFrame;
-  let tooltipValue;
+  let tooltipXYZ;
+  let tooltipMagnitude;
   let tooltipVisible;
   let tooltipX;
   let graphMin = Infinity,
@@ -17,19 +19,38 @@
 
   onMount(() => {
     ctx = canvasElement.getContext("2d");
-    let boneData = data.find((d) => d.name === bone);
-    for (let i = 0; i < boneData.frames.length; i++) {
-      let frameData = boneData.frames[i];
-      let rx = frameData.rotation[0];
-      let ry = frameData.rotation[1];
-      let rz = frameData.rotation[2];
-      graphMin = Math.min(graphMin, rx, ry, rz);
-      graphMax = Math.max(graphMax, rx, ry, rz);
-    }
-    graphMin -= 10;
-    graphMax += 10;
+    calculateMinMax();
     draw($frameIndex, $frameStart, $frameEnd);
   });
+
+  function calculateMinMax() {
+    let boneData = data.find((d) => d.name === bone);
+    graphMin = Infinity;
+    graphMax = -Infinity;
+    if (drawMode === "xyz") {
+      for (let i = 0; i < boneData.frames.length; i++) {
+        let frameData = boneData.frames[i];
+        let rx = frameData.rotation[0];
+        let ry = frameData.rotation[1];
+        let rz = frameData.rotation[2];
+        graphMin = Math.min(graphMin, rx, ry, rz);
+        graphMax = Math.max(graphMax, rx, ry, rz);
+      }
+      graphMin -= 10;
+      graphMax += 10;
+    } else if (drawMode === "magnitude") {
+      let boneData = data.find((d) => d.name === bone);
+      for (let i = 0; i < boneData.frames.length; i++) {
+        let frameData = boneData.frames[i];
+        let mag =
+          frameData.rotation[0] * frameData.rotation[0] +
+          frameData.rotation[1] * frameData.rotation[1] +
+          frameData.rotation[2] * frameData.rotation[2];
+        graphMin = Math.min(graphMin, mag);
+        graphMax = Math.max(graphMax, mag);
+      }
+    }
+  }
 
   /**
    * @param {number} frameIndex
@@ -54,6 +75,7 @@
     let xValues = [];
     let yValues = [];
     let zValues = [];
+    let magValues = [];
     ctx.fillStyle = "black";
 
     // let xChannel = `${bone}_Xrotation`;
@@ -65,9 +87,17 @@
         frameStart + (frameEnd - frameStart) * (x / canvasElement.width)
       );
       let frameData = boneData.frames[frame];
-      xValues.push(frameData.rotation[0]);
-      yValues.push(frameData.rotation[1]);
-      zValues.push(frameData.rotation[2]);
+      if (drawMode === "xyz") {
+        xValues.push(frameData.rotation[0]);
+        yValues.push(frameData.rotation[1]);
+        zValues.push(frameData.rotation[2]);
+      } else {
+        const mag =
+          frameData.rotation[0] * frameData.rotation[0] +
+          frameData.rotation[1] * frameData.rotation[1] +
+          frameData.rotation[2] * frameData.rotation[2];
+        magValues.push(mag);
+      }
     }
     // Find the min/max of vals
     // let min = Math.min(...xValues, ...yValues, ...zValues) - 10;
@@ -76,9 +106,13 @@
     // let max = Math.max(...zValues) + 10;
 
     // Draw all channels
-    drawChannel(xValues, graphMin, graphMax, "#FFB6C1");
-    drawChannel(yValues, graphMin, graphMax, "#F0E68C");
-    drawChannel(zValues, graphMin, graphMax, "#ADD8E6");
+    if (drawMode === "xyz") {
+      drawChannel(xValues, graphMin, graphMax, "#FFB6C1");
+      drawChannel(yValues, graphMin, graphMax, "#F0E68C");
+      drawChannel(zValues, graphMin, graphMax, "#ADD8E6");
+    } else if (drawMode === "magnitude") {
+      drawChannel(magValues, graphMin, graphMax, "#FFB6C1");
+    }
 
     //ctx.fillStyle = "black";
     // ctx.strokeStyle("red");
@@ -181,10 +215,14 @@
     let xValue = frameData.rotation[0];
     let yValue = frameData.rotation[1];
     let zValue = frameData.rotation[2];
+    let magnitude = xValue * xValue + yValue * yValue + zValue * zValue;
+
     tooltipFrame = frame;
-    tooltipValue = `X ${xValue.toFixed(2)}, Y ${yValue.toFixed(
+    tooltipXYZ = `X ${xValue.toFixed(2)} Y ${yValue.toFixed(
       2
-    )}, Z ${zValue.toFixed(2)}`;
+    )} Z ${zValue.toFixed(2)}`;
+
+    tooltipMagnitude = `MAG ${magnitude.toFixed(0)}`;
     tooltipX = e.offsetX;
     frameIndex.set(frame);
   }
@@ -197,6 +235,7 @@
   }
 
   $: {
+    calculateMinMax(drawMode);
     draw($frameIndex, $frameStart, $frameEnd);
   }
 </script>
@@ -216,9 +255,9 @@
     class:visible={tooltipVisible}
     style={`left: ${tooltipX}px`}
   >
-    <span class="tooltip__frame">{tooltipFrame}</span><span
-      class="tooltip__value">{tooltipValue}</span
-    >
+    <span class="tooltip__frame">{tooltipFrame}</span>
+    <span class="tooltip__value">{tooltipXYZ}</span>
+    <span class="tooltip__value">{tooltipMagnitude}</span>
   </div>
   <div class="times">
     <div class="time">{Math.floor($frameStart)}</div>
@@ -262,6 +301,10 @@
     transition: opacity 0.2s;
     box-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
     transform: translateX(-50%);
+  }
+
+  .tooltip__value {
+    white-space: nowrap;
   }
 
   .tooltip.visible {
