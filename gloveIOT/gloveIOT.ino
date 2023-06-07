@@ -4,9 +4,9 @@
 #define MIN(a,b) (((a)<(b))?(a):(b))
 
 // todo: add ine home - router 
-const char* ssid_list[] = {"CS-IoT", "WiFi-2.4-CAB0"};
-const char* password_list[] = {"SLA-JD1PDcs!", "wr43kdnz2a7xm"};
-const int num_networks = 2;
+const char* ssid_list[] = {"HANDS_5G", "CS-IoT", "WiFi-2.4-CAB0"};
+const char* password_list[] = {"95203737", "SLA-JD1PDcs!", "wr43kdnz2a7xm"};
+const int num_networks = 3;
 
 const char* mqttServer = "lieme.cloud.shiftr.io";
 const int mqttPort = 1883;
@@ -22,6 +22,7 @@ int pins[] = {2, 4, 16, 17, 12, 14, 27, 26, 25};
 int numPins = 9;
 
 void setup() {
+  Serial.begin(115200);
   for (int i = 0; i < numPins; i++) {
     pinMode(pins[i], OUTPUT);
   }
@@ -96,17 +97,13 @@ void onMessage(const char* topic, byte* payload, unsigned int length) {
   Serial.println(buffer);
   //Serial.println(message);
 
-  if (message[0] == '1') {
-    digitalWrite(pins[0], HIGH);
+int messageLength = strlen(message);
+for (int i = 0; i < messageLength; i++) {
+  if (message[i] == '1') {
+    digitalWrite(pins[i], HIGH);
   } else {
-    digitalWrite(pins[0], LOW);
+    digitalWrite(pins[i], LOW);   
   }
-
-  if (message[1] == '1') {
-    digitalWrite(pins[1], HIGH);
-  } else {
-    digitalWrite(pins[1], LOW);
-  }
-  // more to follow when i know the pin-finger relation
+}
 
 }
