@@ -9,7 +9,7 @@
   let canvasElement;
   let ctx;
 
-  let frameCount = data.length;
+  let frameCount = data[0].frames.length;
 
   onMount(() => {
     ctx = canvasElement.getContext("2d");
@@ -17,6 +17,12 @@
     // draw();
   });
 
+  /**
+   * Draw the zoom control in the canvas.
+   * @param {number} frameIndex The current frame index
+   * @param {number} frameStart The start of the zoom window
+   * @param {number} frameEnd The end of the zoom window
+   */
   function draw(frameIndex, frameStart, frameEnd) {
     if (!canvasElement) return;
 
@@ -24,6 +30,11 @@
     drawFrameIndex(frameIndex);
   }
 
+  /**
+   * Draw the overview of the timeline.
+   * @param {number} frameStart The start of the zoom window
+   * @param {number} frameEnd The end of the zoom window
+   */
   function drawOverview(frameStart, frameEnd) {
     let frameWidth = canvasElement.width / frameCount;
     let frameStartPixels = frameStart * frameWidth;
@@ -49,6 +60,10 @@
     // ctx.stroke();
   }
 
+  /**
+   * Draw the frame index marker.
+   * @param {number} frameIndex The current frame index
+   */
   function drawFrameIndex(frameIndex) {
     ctx.strokeStyle = "blue";
     ctx.lineWidth = 2;
@@ -59,6 +74,10 @@
     ctx.stroke();
   }
 
+  /**
+   * Handle mouse move events.
+   * @param {MouseEvent} e
+   */
   function onMouseDown(e) {
     // Are we over the frameStart marker?
     let frameWidth = canvasElement.width / frameCount;
@@ -83,6 +102,10 @@
     window.addEventListener("mouseup", onMouseUp);
   }
 
+  /**
+   * Handle mouse move events.
+   * @param {MouseEvent} e
+   */
   function onMouseMove(e) {
     e.preventDefault();
 
@@ -124,6 +147,10 @@
     }
   }
 
+  /**
+   * Handle mouse up events.
+   * @param {MouseEvent} e
+   */
   function onMouseUp(e) {
     window.removeEventListener("mousemove", onMouseMove);
     window.removeEventListener("mouseup", onMouseUp);
