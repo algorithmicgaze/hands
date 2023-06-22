@@ -75,29 +75,29 @@ def animation_loop(bones):
     ]
 
     # Get finger bones
+    left_pinky = find_bone(bones, "LeftFinger5Proximal")
+    left_ring = find_bone(bones, "LeftFinger4Proximal")
+    left_middle = find_bone(bones, "LeftFinger3Proximal")
+    left_index = find_bone(bones, "LeftFinger2Proximal")
+    left_thumb = find_bone(bones, "LeftFinger1Proximal")
+
     right_thumb = find_bone(bones, "RightFinger1Proximal")
     right_index = find_bone(bones, "RightFinger2Proximal")
     right_middle = find_bone(bones, "RightFinger3Proximal")
     right_ring = find_bone(bones, "RightFinger4Proximal")
     right_pinky = find_bone(bones, "RightFinger5Proximal")
 
-    left_thumb = find_bone(bones, "LeftFinger1Proximal")
-    left_index = find_bone(bones, "LeftFinger2Proximal")
-    left_middle = find_bone(bones, "LeftFinger3Proximal")
-    left_ring = find_bone(bones, "LeftFinger4Proximal")
-    left_pinky = find_bone(bones, "LeftFinger5Proximal")
-
     finger_bones = [
+        left_pinky,
+        left_ring,
+        left_middle,
+        left_index,
+        left_thumb,
         right_thumb,
         right_index,
         right_middle,
         right_ring,
         right_pinky,
-        left_thumb,
-        left_index,
-        left_middle,
-        left_ring,
-        left_pinky,
     ]
 
     frame_count = len(right_thumb.frames)
@@ -109,7 +109,7 @@ def animation_loop(bones):
         finger_deltas = [finger_delta(bone.frames, frame) for bone in finger_bones]
         finger_bools = [delta > 100 for delta in finger_deltas]
 
-        if finger_bools != prev_finger_bools and wait_frames > 100:
+        if finger_bools != prev_finger_bools and wait_frames > 50:
             send_message(finger_bools)
             prev_finger_bools = finger_bools
             wait_frames = 0
