@@ -59,6 +59,30 @@
         graphMin = Math.min(graphMin, mag);
         graphMax = Math.max(graphMax, mag);
       }
+    } else if (drawMode === "rate-of-change") {
+      let boneData = data.find((d) => d.name === bone);
+      let deltas = [];
+      channelData = [deltas];
+      for (let i = 0; i < boneData.frames.length; i++) {
+        let frameData = boneData.frames[i];
+        let prevFrameData = boneData.frames[i - 1];
+        if (!prevFrameData) {
+          deltas.push(0);
+          continue;
+        }
+        let mag =
+          frameData.rotation[0] * frameData.rotation[0] +
+          frameData.rotation[1] * frameData.rotation[1] +
+          frameData.rotation[2] * frameData.rotation[2];
+        let prevMag =
+          prevFrameData.rotation[0] * prevFrameData.rotation[0] +
+          prevFrameData.rotation[1] * prevFrameData.rotation[1] +
+          prevFrameData.rotation[2] * prevFrameData.rotation[2];
+        let delta = mag - prevMag;
+        deltas.push(delta);
+        graphMin = Math.min(graphMin, delta);
+        graphMax = Math.max(graphMax, delta);
+      }
     }
   }
 
@@ -111,6 +135,15 @@
         "#ADD8E6"
       );
     } else if (drawMode === "magnitude") {
+      drawChannel(
+        channelData[0],
+        frameStart,
+        frameEnd,
+        graphMin,
+        graphMax,
+        "#FFB6C1"
+      );
+    } else if (drawMode === "rate-of-change") {
       drawChannel(
         channelData[0],
         frameStart,
@@ -188,18 +221,31 @@
 
     let boneData = data.find((d) => d.name === bone);
     let frameData = boneData.frames[frame];
+    let prevFrameData = boneData.frames[frame - 1];
 
     let xValue = frameData.rotation[0];
     let yValue = frameData.rotation[1];
     let zValue = frameData.rotation[2];
     let magnitude = xValue * xValue + yValue * yValue + zValue * zValue;
 
+    let prevXValue = prevFrameData ? prevFrameData.rotation[0] : xValue;
+    let prevYValue = prevFrameData ? prevFrameData.rotation[1] : yValue;
+    let prevZValue = prevFrameData ? prevFrameData.rotation[2] : zValue;
+    let prevMagnitude =
+      prevXValue * prevXValue +
+      prevYValue * prevYValue +
+      prevZValue * prevZValue;
+    let rateOfChange = magnitude - prevMagnitude;
+
     tooltipFrame = frame;
     tooltipXYZ = `X ${xValue.toFixed(2)} Y ${yValue.toFixed(
       2
     )} Z ${zValue.toFixed(2)}`;
 
-    tooltipMagnitude = `MAG ${magnitude.toFixed(0)}`;
+    tooltipMagnitude = `MAG ${magnitude.toFixed(0)} Δ${rateOfChange.toFixed(
+      0
+    )}`;
+
     tooltipX = e.offsetX;
     frameIndex.set(frame);
   }

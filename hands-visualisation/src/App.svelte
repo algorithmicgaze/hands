@@ -9,6 +9,7 @@
 
   const DRAW_MODE_XYZ = "xyz";
   const DRAW_MODE_MAGNITUDE = "magnitude";
+  const DRAW_MODE_RATE_OF_CHANGE = "rate-of-change";
 
   let isLoading = true;
   let data = [];
@@ -41,6 +42,7 @@
     <select bind:value={drawMode}>
       <option value={DRAW_MODE_XYZ}>XYZ</option>
       <option value={DRAW_MODE_MAGNITUDE}>Magnitude</option>
+      <option value={DRAW_MODE_RATE_OF_CHANGE}>Rate of Change</option>
     </select>
 
     <TimePlot {data} bone="RightFinger1Proximal" {drawMode} />
