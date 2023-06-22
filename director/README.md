@@ -1,1 +1,1 @@
-pip install lz4
+pip install lz4 paho-mqtt

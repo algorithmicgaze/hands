@@ -24,10 +24,12 @@ client = mqtt.Client()
 
 client.on_connect = on_connect
 # client.on_message = on_message
+# mqtt://fdb001:sEKIbUaSWWD53UcR@fdb001.cloud.shiftr.io
 
-client.username_pw_set("lieme", "x7iNJWfycxrdEz51")
 
-client.connect("lieme.cloud.shiftr.io", 1883, 60)
+client.username_pw_set("fdb001", "sEKIbUaSWWD53UcR")
+
+client.connect("fdb001.cloud.shiftr.io", 1883, 60)
 
 while True:
     client.loop(timeout=0.1, max_packets=1)
