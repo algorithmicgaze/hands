@@ -3,9 +3,13 @@
   import TimePlot from "./TimePlot.svelte";
   import { frameIndex, frameStart, frameEnd } from "./stores";
   import { parseBvh } from "./bvh-parser";
+  import VideoPreview from "./VideoPreview.svelte";
 
   const BVH_URL =
-    "https://algorithmicgaze.s3.amazonaws.com/projects/2022-hands/mocap/2023-05-25-rec1.bvh";
+    "https://algorithmicgaze.s3.amazonaws.com/projects/2023-hands/recordings/2023-11-09/oboe-slomo-clap.bvh";
+
+  const VIDEO_URL =
+    "https://algorithmicgaze.s3.amazonaws.com/projects/2023-hands/recordings/2023-11-09/oboe-slomo-clap.mp4";
 
   const DRAW_MODE_XYZ = "xyz";
   const DRAW_MODE_MAGNITUDE = "magnitude";
@@ -44,6 +48,8 @@
       <option value={DRAW_MODE_MAGNITUDE}>Magnitude</option>
       <option value={DRAW_MODE_RATE_OF_CHANGE}>Rate of Change</option>
     </select>
+
+    <VideoPreview src={VIDEO_URL} offset={107} fps={25} />
 
     <TimePlot {data} bone="RightFinger1Proximal" {drawMode} />
     <TimePlot {data} bone="RightFinger2Proximal" {drawMode} />
