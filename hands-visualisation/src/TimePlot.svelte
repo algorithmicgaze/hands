@@ -174,6 +174,8 @@
    * @param {string} strokeStyle
    */
   function drawChannel(values, frameStart, frameEnd, min, max, strokeStyle) {
+    min = Math.min(...values.slice(frameStart, frameEnd));
+    max = Math.max(...values.slice(frameStart, frameEnd));
     ctx.strokeStyle = strokeStyle;
     ctx.lineWidth = 1;
     ctx.beginPath();
