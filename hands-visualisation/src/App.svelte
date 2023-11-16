@@ -24,6 +24,7 @@
   let data = [];
   let segments = [];
   let drawMode = DRAW_MODE_XYZ;
+  let frameOffset = 107;
 
   async function fetchBvhFile() {
     const response = await fetch(BVH_URL);
@@ -67,22 +68,22 @@
       <option value={DRAW_MODE_RATE_OF_CHANGE}>Rate of Change</option>
     </select>
 
-    <VideoPreview src={VIDEO_URL} offset={107} fps={25} />
+    <VideoPreview src={VIDEO_URL} offset={frameOffset} fps={25} />
     <HandsOut {data} />
 
     <SegmentPlot {segments} />
 
-    <TimePlot {data} bone="RightFinger1Proximal" {drawMode} />
-    <TimePlot {data} bone="RightFinger2Proximal" {drawMode} />
-    <TimePlot {data} bone="RightFinger3Proximal" {drawMode} />
-    <TimePlot {data} bone="RightFinger4Proximal" {drawMode} />
-    <TimePlot {data} bone="RightFinger5Proximal" {drawMode} />
+    <TimePlot {data} bone="RightFinger1Proximal" {drawMode} {frameOffset} />
+    <TimePlot {data} bone="RightFinger2Proximal" {drawMode} {frameOffset} />
+    <TimePlot {data} bone="RightFinger3Proximal" {drawMode} {frameOffset} />
+    <TimePlot {data} bone="RightFinger4Proximal" {drawMode} {frameOffset} />
+    <TimePlot {data} bone="RightFinger5Proximal" {drawMode} {frameOffset} />
 
-    <TimePlot {data} bone="LeftFinger1Proximal" {drawMode} />
-    <TimePlot {data} bone="LeftFinger2Proximal" {drawMode} />
-    <TimePlot {data} bone="LeftFinger3Proximal" {drawMode} />
-    <TimePlot {data} bone="LeftFinger4Proximal" {drawMode} />
-    <TimePlot {data} bone="LeftFinger5Proximal" {drawMode} />
+    <TimePlot {data} bone="LeftFinger1Proximal" {drawMode} {frameOffset} />
+    <TimePlot {data} bone="LeftFinger2Proximal" {drawMode} {frameOffset} />
+    <TimePlot {data} bone="LeftFinger3Proximal" {drawMode} {frameOffset} />
+    <TimePlot {data} bone="LeftFinger4Proximal" {drawMode} {frameOffset} />
+    <TimePlot {data} bone="LeftFinger5Proximal" {drawMode} {frameOffset} />
   {/if}
 </main>
 

@@ -11,6 +11,7 @@
   export let data;
   export let bone;
   export let drawMode;
+  export let frameOffset;
 
   let canvasElement;
   let ctx;
@@ -269,7 +270,7 @@
       prevZValue * prevZValue;
     let rateOfChange = magnitude - prevMagnitude;
 
-    let offsetFrame = frame + 107;
+    let offsetFrame = frame + frameOffset;
     let frameHours = padTime(Math.floor(offsetFrame / 30 / 60 / 60) + 1); // + 1 to be compatible with the Davinci Resolve timecode
     let frameMinutes = padTime(Math.floor((offsetFrame / 30 / 60) % 60));
     let frameSeconds = padTime(Math.floor((offsetFrame / 30) % 60));
