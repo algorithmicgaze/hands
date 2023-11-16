@@ -89,7 +89,7 @@
       console.log(bone, delta);
     }
 
-    return delta > 100;
+    return delta > 50;
   }
 </script>
 
