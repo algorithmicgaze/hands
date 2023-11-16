@@ -1,6 +1,11 @@
 <script>
   import { onMount } from "svelte";
-  import { frameIndex, frameStart, frameEnd } from "./stores";
+  import {
+    frameIndex,
+    frameStart,
+    frameEnd,
+    frameUpdateTriggeredByUser,
+  } from "./stores";
   import { mapValue } from "./math";
 
   export let data;
@@ -249,6 +254,7 @@
     )}`;
 
     tooltipX = e.offsetX;
+    frameUpdateTriggeredByUser.set(true);
     frameIndex.set(frame);
   }
 

@@ -4,6 +4,7 @@
   import { frameIndex, frameStart, frameEnd } from "./stores";
   import { parseBvh } from "./bvh-parser";
   import VideoPreview from "./VideoPreview.svelte";
+  import SegmentPlot from "./SegmentPlot.svelte";
 
   const BVH_URL =
     "https://algorithmicgaze.s3.amazonaws.com/projects/2023-hands/recordings/2023-11-09/oboe-slomo-clap.bvh";
@@ -11,19 +12,24 @@
   const VIDEO_URL =
     "https://algorithmicgaze.s3.amazonaws.com/projects/2023-hands/recordings/2023-11-09/oboe-slomo-clap.mp4";
 
+  const SEGMENTS_URL =
+    "https://algorithmicgaze.s3.amazonaws.com/projects/2023-hands/recordings/2023-11-09/oboe-slomo-clap.json";
+
   const DRAW_MODE_XYZ = "xyz";
   const DRAW_MODE_MAGNITUDE = "magnitude";
   const DRAW_MODE_RATE_OF_CHANGE = "rate-of-change";
 
   let isLoading = true;
   let data = [];
+  let segments = [];
   let drawMode = DRAW_MODE_XYZ;
+  let isPlaying = false;
 
   async function fetchBvhFile() {
     const response = await fetch(BVH_URL);
     const text = await response.text();
     const bones = parseBvh(text);
-    console.log(bones);
+    // console.log(bones);
     data = bones;
     isLoading = false;
     if ($frameEnd === 0) {
@@ -31,9 +37,21 @@
     }
   }
 
-  // let frameIndex = 0;
+  async function fetchSegmentsFile() {
+    const response = await fetch(SEGMENTS_URL);
+    const json = await response.json();
+    console.log(json);
+    segments = json.segments;
+  }
 
   fetchBvhFile();
+  fetchSegmentsFile();
+  window.addEventListener("keypress", (e) => {
+    if (e.key === " ") {
+      e.preventDefault();
+      isPlaying = !isPlaying;
+    }
+  });
 </script>
 
 <main>
@@ -49,7 +67,9 @@
       <option value={DRAW_MODE_RATE_OF_CHANGE}>Rate of Change</option>
     </select>
 
-    <VideoPreview src={VIDEO_URL} offset={107} fps={25} />
+    <VideoPreview src={VIDEO_URL} offset={107} fps={25} {isPlaying} />
+
+    <SegmentPlot {segments} />
 
     <TimePlot {data} bone="RightFinger1Proximal" {drawMode} />
     <TimePlot {data} bone="RightFinger2Proximal" {drawMode} />
