@@ -6,6 +6,7 @@
   import VideoPreview from "./VideoPreview.svelte";
   import SegmentPlot from "./SegmentPlot.svelte";
   import HandsOut from "./HandsOut.svelte";
+  import PlayIndicator from "./PlayIndicator.svelte";
 
   const BVH_URL =
     "https://algorithmicgaze.s3.amazonaws.com/projects/2023-hands/recordings/2023-11-09/oboe-slomo-clap.bvh";
@@ -84,6 +85,7 @@
     <TimePlot {data} bone="LeftFinger3Proximal" {drawMode} {frameOffset} />
     <TimePlot {data} bone="LeftFinger4Proximal" {drawMode} {frameOffset} />
     <TimePlot {data} bone="LeftFinger5Proximal" {drawMode} {frameOffset} />
+    <PlayIndicator />
   {/if}
 </main>
 
