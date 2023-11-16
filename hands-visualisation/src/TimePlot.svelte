@@ -37,6 +37,8 @@
     let frameData = [];
     graphMin = Infinity;
     graphMax = -Infinity;
+    let n = 15; // half a second (30fps / 2)
+    let movingAverageQueue = [];
     if (drawMode === "xyz") {
       const xs = boneData.frames.map((f) => f.rotation[0]);
       const ys = boneData.frames.map((f) => f.rotation[1]);
@@ -80,14 +82,32 @@
           frameData.rotation[0] * frameData.rotation[0] +
           frameData.rotation[1] * frameData.rotation[1] +
           frameData.rotation[2] * frameData.rotation[2];
-        let prevMag =
-          prevFrameData.rotation[0] * prevFrameData.rotation[0] +
-          prevFrameData.rotation[1] * prevFrameData.rotation[1] +
-          prevFrameData.rotation[2] * prevFrameData.rotation[2];
-        let delta = mag - prevMag;
+
+        // Update the moving average queue
+        movingAverageQueue.push(mag);
+        if (movingAverageQueue.length > n) {
+          movingAverageQueue.shift();
+        }
+
+        // Calculate moving average
+        let movingAverage =
+          movingAverageQueue.reduce((a, b) => a + b, 0) /
+          movingAverageQueue.length;
+
+        // Compare current magnitude with moving average
+        let delta = mag - movingAverage;
         deltas.push(delta);
         graphMin = Math.min(graphMin, delta);
         graphMax = Math.max(graphMax, delta);
+
+        // let prevMag =
+        //   prevFrameData.rotation[0] * prevFrameData.rotation[0] +
+        //   prevFrameData.rotation[1] * prevFrameData.rotation[1] +
+        //   prevFrameData.rotation[2] * prevFrameData.rotation[2];
+        // let delta = mag - prevMag;
+        // deltas.push(delta);
+        // graphMin = Math.min(graphMin, delta);
+        // graphMax = Math.max(graphMax, delta);
       }
     }
   }

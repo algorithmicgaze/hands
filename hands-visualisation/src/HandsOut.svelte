@@ -1,13 +1,7 @@
 <script>
   import mqtt from "mqtt";
   import { onMount } from "svelte";
-  import {
-    frameIndex,
-    frameStart,
-    frameEnd,
-    frameUpdateTriggeredByUser,
-    isPlaying,
-  } from "./stores";
+  import { frameIndex, isPlaying } from "./stores";
 
   export let data;
 
@@ -23,7 +17,7 @@
     client = mqtt.connect(
       "wss://lieme:x7iNJWfycxrdEz51@lieme.cloud.shiftr.io",
       {
-        clientId: "hands_data_web",
+        clientId: "hands_visualizer",
       }
     );
     client.on("connect", () => {
@@ -33,14 +27,14 @@
   });
 
   function update() {
-    if (connected && $isPlaying) {
+    if ($isPlaying) {
       handPattern[0] = boneTrigger("LeftFinger5Proximal");
       handPattern[1] = boneTrigger("LeftFinger4Proximal");
       handPattern[2] = boneTrigger("LeftFinger3Proximal");
       handPattern[3] = boneTrigger("LeftFinger2Proximal");
-      handPattern[4] = boneTrigger("LeftFinger1Proximal");
+      handPattern[4] = 0; // boneTrigger("LeftFinger1Proximal");
 
-      handPattern[5] = boneTrigger("RightFinger1Proximal");
+      handPattern[5] = 0; // boneTrigger("RightFinger1Proximal");
       handPattern[6] = boneTrigger("RightFinger2Proximal");
       handPattern[7] = boneTrigger("RightFinger3Proximal");
       handPattern[8] = boneTrigger("RightFinger4Proximal");
@@ -49,12 +43,17 @@
       if (Date.now() - prevPacketTime > sendRate) {
         prevPacketTime = Date.now();
         let handString = handPattern.map((finger) => (finger ? 1 : 0)).join("");
-        client.publish("hands", handString);
+        if (connected) {
+          client.publish("hands", handString);
+        }
       }
-    } else if (connected) {
+    } else {
+      handPattern = Array(10).fill(false);
       if (Date.now() - prevPacketTime > sendRate) {
         prevPacketTime = Date.now();
-        client.publish("hands", "0000000000");
+        if (connected) {
+          client.publish("hands", "0000000000");
+        }
       }
     }
     requestAnimationFrame(update);
@@ -62,24 +61,36 @@
 
   function boneTrigger(bone) {
     let boneData = data.find((d) => d.name === bone);
+
+    // Calculate the average magnitude of the past 10 frames
+    const n = 15;
+    let magSum = 0;
+    let samples = 0;
+    for (let i = 0; i < n; i++) {
+      let frameData = boneData.frames[$frameIndex - i];
+      if (frameData) {
+        magSum +=
+          frameData.rotation[0] ** 2 +
+          frameData.rotation[1] ** 2 +
+          frameData.rotation[2] ** 2;
+        samples += 1;
+      }
+    }
+    let magAvg = magSum / samples;
+
     let frameData = boneData.frames[$frameIndex];
     let mag =
       frameData.rotation[0] ** 2 +
       frameData.rotation[1] ** 2 +
       frameData.rotation[2] ** 2;
-    console.log(bone, mag);
-    return mag > 1000;
-  }
 
-  //   $: {
-  //     if (connected) {
-  //       let handString = handPattern.map((finger) => (finger ? 1 : 0)).join("");
-  //       client.publish("hands", handString);
-  //     }
-  //     if (!isPlaying) {
-  //       client.publish("hands", "0000000000");
-  //     }
-  //   }
+    let delta = Math.abs(mag - magAvg);
+    if (bone === "RightFinger2Proximal") {
+      console.log(bone, delta);
+    }
+
+    return delta > 100;
+  }
 </script>
 
 <div class="hands-out">
@@ -107,5 +118,8 @@
     border-radius: 2px;
     background-color: black;
     border: 1px solid #222;
+  }
+  .finger:nth-child(5) {
+    margin-right: 4px;
   }
 </style>
