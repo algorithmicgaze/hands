@@ -4,7 +4,7 @@
 #define MIN(a,b) (((a)<(b))?(a):(b))
 
 // todo: add ine home - router 
-const char* ssid_list[] = {"HANDS_5G", "CS-IoT", "WiFi-2.4-CAB0"};
+const char* ssid_list[] = {"HANDS", "CS-IoT", "WiFi-2.4-CAB0"};
 const char* password_list[] = {"95203737", "SLA-JD1PDcs!", "wr43kdnz2a7xm"};
 const int num_networks = 3;
 
@@ -16,10 +16,9 @@ const char* mqttPassword = "x7iNJWfycxrdEz51";
 WiFiClient espKlant;
 PubSubClient client(espKlant);
 
-// info: rechterhand duim niet - linkerhand wel
-// todo: define which pin is which finger!
-int pins[] = {2, 4, 16, 17, 12, 14, 27, 26, 25};
-int numPins = 9;
+
+int pins[] = {2, 4, 16, 17, 19, 12, 14, 27, 26, 25};
+int numPins = 10;
 
 void setup() {
   Serial.begin(115200);
@@ -98,7 +97,11 @@ void onMessage(const char* topic, byte* payload, unsigned int length) {
   //Serial.println(message);
 
 int messageLength = strlen(message);
-for (int i = 0; i < messageLength; i++) {
+Serial.print("incoming: ");
+Serial.println(messageLength);
+Serial.print("message length");
+Serial.println(length);
+for (int i = 0; i < length; i++) {
   if (message[i] == '1') {
     digitalWrite(pins[i], HIGH);
   } else {
