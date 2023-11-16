@@ -4,3 +4,4 @@ export let frameIndex = writable(0);
 export let frameStart = writable(0);
 export let frameEnd = writable(0);
 export let frameUpdateTriggeredByUser = writable(false);
+export let isPlaying = writable(false);

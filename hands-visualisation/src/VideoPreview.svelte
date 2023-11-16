@@ -4,13 +4,13 @@
     frameStart,
     frameEnd,
     frameUpdateTriggeredByUser,
+    isPlaying,
   } from "./stores";
   import { onMount } from "svelte";
   let videoElement;
   export let src = "";
   export let offset = 0;
   export let fps = 25;
-  export let isPlaying = false;
   let prevPlaying = undefined;
 
   $: {
@@ -21,12 +21,12 @@
 
       //   videoElement.currentTime = $frameIndex / 30 + offset / fps;
 
-      if (isPlaying && prevPlaying !== isPlaying) {
+      if ($isPlaying && prevPlaying !== $isPlaying) {
         videoElement.play();
-        prevPlaying = isPlaying;
-      } else if (!isPlaying && prevPlaying !== isPlaying) {
+        prevPlaying = $isPlaying;
+      } else if (!$isPlaying && prevPlaying !== $isPlaying) {
         videoElement.pause();
-        prevPlaying = isPlaying;
+        prevPlaying = $isPlaying;
       }
     }
 

@@ -1,10 +1,11 @@
 <script>
   import ZoomControl from "./ZoomControl.svelte";
   import TimePlot from "./TimePlot.svelte";
-  import { frameIndex, frameStart, frameEnd } from "./stores";
+  import { frameIndex, frameStart, frameEnd, isPlaying } from "./stores";
   import { parseBvh } from "./bvh-parser";
   import VideoPreview from "./VideoPreview.svelte";
   import SegmentPlot from "./SegmentPlot.svelte";
+  import HandsOut from "./HandsOut.svelte";
 
   const BVH_URL =
     "https://algorithmicgaze.s3.amazonaws.com/projects/2023-hands/recordings/2023-11-09/oboe-slomo-clap.bvh";
@@ -23,7 +24,6 @@
   let data = [];
   let segments = [];
   let drawMode = DRAW_MODE_XYZ;
-  let isPlaying = false;
 
   async function fetchBvhFile() {
     const response = await fetch(BVH_URL);
@@ -49,7 +49,7 @@
   window.addEventListener("keypress", (e) => {
     if (e.key === " ") {
       e.preventDefault();
-      isPlaying = !isPlaying;
+      isPlaying.set(!$isPlaying);
     }
   });
 </script>
@@ -67,7 +67,8 @@
       <option value={DRAW_MODE_RATE_OF_CHANGE}>Rate of Change</option>
     </select>
 
-    <VideoPreview src={VIDEO_URL} offset={107} fps={25} {isPlaying} />
+    <VideoPreview src={VIDEO_URL} offset={107} fps={25} />
+    <HandsOut {data} />
 
     <SegmentPlot {segments} />
 

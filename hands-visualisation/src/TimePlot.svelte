@@ -14,6 +14,7 @@
 
   let canvasElement;
   let ctx;
+  let tooltipTime;
   let tooltipFrame;
   let tooltipXYZ;
   let tooltipMagnitude;
@@ -217,6 +218,10 @@
     //   frameIndex.set(frame);
   }
 
+  function padTime(time) {
+    return time < 10 ? `0${time}` : time;
+  }
+
   /**
    * @param {{ offsetX: number; }} e
    */
@@ -244,6 +249,13 @@
       prevZValue * prevZValue;
     let rateOfChange = magnitude - prevMagnitude;
 
+    let offsetFrame = frame + 107;
+    let frameHours = padTime(Math.floor(offsetFrame / 30 / 60 / 60) + 1); // + 1 to be compatible with the Davinci Resolve timecode
+    let frameMinutes = padTime(Math.floor((offsetFrame / 30 / 60) % 60));
+    let frameSeconds = padTime(Math.floor((offsetFrame / 30) % 60));
+    let frameFrame = padTime(Math.floor(offsetFrame % 30));
+
+    tooltipTime = `${frameHours}:${frameMinutes}:${frameSeconds}:${frameFrame}`;
     tooltipFrame = frame;
     tooltipXYZ = `X ${xValue.toFixed(2)} Y ${yValue.toFixed(
       2
@@ -286,7 +298,7 @@
     class:visible={tooltipVisible}
     style={`left: ${tooltipX}px`}
   >
-    <span class="tooltip__frame">{tooltipFrame}</span>
+    <span class="tooltip__frame">{tooltipTime} {tooltipFrame}</span>
     <span class="tooltip__value">{tooltipXYZ}</span>
     <span class="tooltip__value">{tooltipMagnitude}</span>
   </div>
