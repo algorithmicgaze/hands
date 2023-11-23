@@ -4,6 +4,7 @@
   import { frameIndex, isPlaying } from "./stores";
 
   export let data;
+  export let frameOffset;
 
   let client;
   let connected = false;
@@ -57,6 +58,11 @@
       }
     }
     requestAnimationFrame(update);
+  }
+
+  function hasAudio(bone) {
+    // Convert current frameIndex to time, taking frameOffset into account.
+    let time = ($frameIndex + frameOffset) / 25;
   }
 
   function boneTrigger(bone) {

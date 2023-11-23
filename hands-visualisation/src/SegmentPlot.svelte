@@ -4,7 +4,7 @@
   import { mapValue } from "./math";
 
   export let segments;
-  export let offset;
+  export let frameOffset;
 
   let canvasElement;
   let ctx;
@@ -18,7 +18,7 @@
     if (!canvasElement) return;
     ctx.fillStyle = "#333";
     ctx.fillRect(0, 0, canvasElement.width, canvasElement.height);
-    drawZoomed(frameIndex, frameStart + offset, frameEnd + offset);
+    drawZoomed(frameIndex, frameStart + frameOffset, frameEnd + frameOffset);
   }
 
   function drawZoomed(frameIndex, frameStart, frameEnd) {

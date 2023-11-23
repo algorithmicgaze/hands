@@ -11,9 +11,7 @@
   const BVH_URL =
     "https://algorithmicgaze.s3.amazonaws.com/projects/2023-hands/recordings/2023-11-09/oboe-slomo-clap.bvh";
 
-  const VIDEO_URL =
-    "https://algorithmicgaze.s3.amazonaws.com/projects/2023-hands/recordings/2023-11-09/oboe-slomo-clap.mp4";
-
+  const VIDEO_URL = "/oboe-slomo-clap.mp4";
   const SEGMENTS_URL =
     "https://algorithmicgaze.s3.amazonaws.com/projects/2023-hands/recordings/2023-11-09/oboe-slomo-clap.json";
 
@@ -69,10 +67,10 @@
       <option value={DRAW_MODE_RATE_OF_CHANGE}>Rate of Change</option>
     </select>
 
-    <VideoPreview src={VIDEO_URL} offset={frameOffset} fps={25} />
-    <HandsOut {data} />
+    <VideoPreview src={VIDEO_URL} {frameOffset} videoFps={25} mocapFps={30} />
+    <HandsOut {data} {frameOffset} />
 
-    <SegmentPlot {segments} offset={frameOffset} />
+    <SegmentPlot {segments} {frameOffset} />
 
     <TimePlot {data} bone="RightFinger1Proximal" {drawMode} {frameOffset} />
     <TimePlot {data} bone="RightFinger2Proximal" {drawMode} {frameOffset} />

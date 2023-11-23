@@ -7,19 +7,28 @@
     isPlaying,
   } from "./stores";
   import { onMount } from "svelte";
+  import { frameToVideoTime } from "./math";
   let videoElement;
   export let src = "";
-  export let offset = 0;
-  export let fps = 25;
+  export let frameOffset = 0;
+  export let videoFps = 25;
+  export let mocapFps = 30;
   let prevPlaying = undefined;
 
   $: {
     if (videoElement) {
       if ($frameUpdateTriggeredByUser) {
-        videoElement.currentTime = $frameIndex / 30 + offset / fps;
+        videoElement.currentTime =
+          $frameIndex / mocapFps + frameOffset / videoFps;
+        videoElement.currentTime = frameToVideoTime({
+          frameIndex: $frameIndex,
+          frameOffset,
+          mocapFps,
+          videoFps,
+        });
       }
 
-      //   videoElement.currentTime = $frameIndex / 30 + offset / fps;
+      //   videoElement.currentTime = $frameIndex / mocapFps + frameOffset / fps;
 
       if ($isPlaying && prevPlaying !== $isPlaying) {
         videoElement.play();
@@ -38,7 +47,9 @@
     videoElement.addEventListener("timeupdate", () => {
       frameUpdateTriggeredByUser.set(false);
       frameIndex.set(
-        Math.floor((videoElement.currentTime - offset / fps) * 30)
+        Math.floor(
+          (videoElement.currentTime - frameOffset / videoFps) * mocapFps
+        )
       );
     });
     // ctx = canvasElement.getContext("2d");
