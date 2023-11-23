@@ -11,6 +11,8 @@ def extract_audio_segments(
     # Extract audio
 
     with VideoFileClip(video_path) as video:
+        video_duration = video.duration
+        print(f"Video duration: {video_duration} seconds")
         audio = video.audio
         audio.write_audiofile("temp_audio.wav", codec="pcm_s16le")
 
@@ -52,7 +54,7 @@ def extract_audio_segments(
     # y, sr =
 
 
-segments = extract_audio_segments("../_data/064A3051_720.mov", 300, 1000, -40)
+segments = extract_audio_segments("../recordings/oboe-slomo-clap.mp4", 300, 1000, -40)
 
 # Convert to JSON
 json_output = json.dumps({"segments": segments}, indent=4)
