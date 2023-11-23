@@ -72,7 +72,7 @@
     <VideoPreview src={VIDEO_URL} offset={frameOffset} fps={25} />
     <HandsOut {data} />
 
-    <SegmentPlot {segments} />
+    <SegmentPlot {segments} offset={frameOffset} />
 
     <TimePlot {data} bone="RightFinger1Proximal" {drawMode} {frameOffset} />
     <TimePlot {data} bone="RightFinger2Proximal" {drawMode} {frameOffset} />
