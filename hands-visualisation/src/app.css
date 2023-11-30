@@ -1,5 +1,21 @@
+@font-face {
+  font-display: swap;
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 400;
+  src: url("/fonts/inter-v13-latin_latin-ext-regular.woff2") format("woff2");
+}
+/* inter-700 - latin_latin-ext */
+@font-face {
+  font-display: swap;
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 700;
+  src: url("/fonts/inter-v13-latin_latin-ext-700.woff2") format("woff2");
+}
+
 :root {
-  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  font-family: Inter, sans-serif;
   line-height: 1.5;
   font-weight: 400;
 
