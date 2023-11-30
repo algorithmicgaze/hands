@@ -14,7 +14,6 @@
   let prevPacketTime = 0;
 
   onMount(() => {
-    console.log(mqtt);
     client = mqtt.connect(
       "wss://lieme:x7iNJWfycxrdEz51@lieme.cloud.shiftr.io",
       {
