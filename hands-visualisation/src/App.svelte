@@ -9,6 +9,7 @@
   import SegmentPlot from "./SegmentPlot.svelte";
   import HandsOut from "./HandsOut.svelte";
   import PlayIndicator from "./PlayIndicator.svelte";
+  import FootPedal from "./FootPedal.svelte";
 
   const DRAW_MODE_XYZ = "xyz";
   const DRAW_MODE_MAGNITUDE = "magnitude";
@@ -166,6 +167,7 @@
       frameOffset={scene.mocapFrameOffset}
     />
     <PlayIndicator />
+    <FootPedal />
   {/if}
 </main>
 

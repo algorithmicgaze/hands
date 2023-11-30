@@ -18,7 +18,6 @@ We assume the bvh file is in the same directory as the mp4 file, using the same 
 python create_scene.py <MP4 file>
 ```
 
-
 ## Arduino
 
 Arduino code needs pubsubclient library by Nick O’Leary in order to work with MQTT.
@@ -27,3 +26,13 @@ install it with 'manage library' option in arduino
 
 info:
 https://pubsubclient.knolleary.net/
+
+## Foot Pedal
+
+The visualiser is made to be controlled by a foot pedal, to control play/pause/reset and the send rate. Here is the proper configuration:
+
+- [A] Play/Pause: CC# 64, value ignored
+- [B] Save Frame: CC# 67, value ignored
+- [C] Restore Frame: CC# 68, value ignored
+- [D] Reset: CC# 65, value ignored
+- [1] [2] [3] [4] Send Rate (in ms): PC# 66, value 0-127 = at most every 50ms
