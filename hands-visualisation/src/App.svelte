@@ -15,6 +15,7 @@
   const DRAW_MODE_RATE_OF_CHANGE = "rate-of-change";
 
   let isLoading = true;
+  let error = null;
   let scene = null;
   let data = [];
   let drawMode = DRAW_MODE_MAGNITUDE;
@@ -24,7 +25,18 @@
    */
   async function fetchSceneFile(url) {
     const response = await fetch(url);
-    scene = await response.json();
+    if (!response.ok) {
+      isLoading = false;
+      error = `Failed to fetch scene file: ${response.status}`;
+      return;
+    }
+    try {
+      scene = await response.json();
+    } catch (e) {
+      isLoading = false;
+      error = `Failed to parse scene file: ${e}`;
+      return;
+    }
     scene.basePath = url.split("/").slice(0, -1).join("/");
 
     await fetchBvhFile(`${scene.basePath}/${scene.mocapFile}`);
@@ -48,10 +60,10 @@
   }
 
   onMount(async () => {
-    const sceneId = document.location.hash
-      ? document.location.hash.substring(1)
-      : "2023-11-09-oboe-slomo-clap";
-    const sceneUrl = `/scenes/${sceneId}.json`;
+    const params = new URLSearchParams(window.location.search);
+    const sceneUrl =
+      params.get("url") ||
+      "https://algorithmicgaze.s3.amazonaws.com/projects/2023-hands/scenes/2023-11-16-oboe-pan.json";
 
     await fetchSceneFile(sceneUrl);
 
@@ -68,6 +80,8 @@
   <h1>Hands Visualiser</h1>
   {#if isLoading}
     <p>Loading...</p>
+  {:else if error}
+    <p class="error">{error}</p>
   {:else}
     <p>Loaded {data.length} rows</p>
     <ZoomControl {data} />

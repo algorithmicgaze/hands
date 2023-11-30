@@ -92,3 +92,8 @@ button:focus-visible {
     background-color: #f9f9f9;
   }
 }
+
+.error {
+  color: #ff0033;
+  font-weight: bold;
+}
