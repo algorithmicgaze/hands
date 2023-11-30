@@ -10,7 +10,7 @@
   import { frameToVideoTime } from "./math";
   let videoElement;
   export let src = "";
-  export let frameOffset = 0;
+  export let mocapFrameOffset = 0;
   export let videoFps = 25;
   export let mocapFps = 30;
   let prevPlaying = undefined;
@@ -19,16 +19,16 @@
     if (videoElement) {
       if ($frameUpdateTriggeredByUser) {
         videoElement.currentTime =
-          $frameIndex / mocapFps + frameOffset / videoFps;
+          $frameIndex / mocapFps + mocapFrameOffset / videoFps;
         videoElement.currentTime = frameToVideoTime({
           frameIndex: $frameIndex,
-          frameOffset,
+          mocapFrameOffset,
           mocapFps,
           videoFps,
         });
       }
 
-      //   videoElement.currentTime = $frameIndex / mocapFps + frameOffset / fps;
+      //   videoElement.currentTime = $frameIndex / mocapFps + mocapFrameOffset / fps;
 
       if ($isPlaying && prevPlaying !== $isPlaying) {
         videoElement.play();
@@ -48,7 +48,7 @@
       frameUpdateTriggeredByUser.set(false);
       frameIndex.set(
         Math.floor(
-          (videoElement.currentTime - frameOffset / videoFps) * mocapFps
+          (videoElement.currentTime - mocapFrameOffset / videoFps) * mocapFps
         )
       );
     });

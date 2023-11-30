@@ -4,9 +4,9 @@ export function mapValue(v, inMin, inMax, outMin, outMax) {
 
 export function frameToVideoTime({
   frameIndex,
-  frameOffset,
+  mocapFrameOffset,
   mocapFps,
   videoFps,
 }) {
-  return frameIndex / mocapFps + frameOffset / videoFps;
+  return frameIndex / mocapFps + mocapFrameOffset / videoFps;
 }

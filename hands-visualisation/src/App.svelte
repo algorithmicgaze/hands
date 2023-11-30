@@ -1,4 +1,6 @@
 <script>
+  import { onMount } from "svelte";
+
   import ZoomControl from "./ZoomControl.svelte";
   import TimePlot from "./TimePlot.svelte";
   import { frameIndex, frameStart, frameEnd, isPlaying } from "./stores";
@@ -8,49 +10,57 @@
   import HandsOut from "./HandsOut.svelte";
   import PlayIndicator from "./PlayIndicator.svelte";
 
-  const BVH_URL =
-    "https://algorithmicgaze.s3.amazonaws.com/projects/2023-hands/recordings/2023-11-09/oboe-slomo-clap.bvh";
-
-  const VIDEO_URL = "/oboe-slomo-clap.mp4";
-  const SEGMENTS_URL =
-    "https://algorithmicgaze.s3.amazonaws.com/projects/2023-hands/recordings/2023-11-09/oboe-slomo-clap.json";
-
   const DRAW_MODE_XYZ = "xyz";
   const DRAW_MODE_MAGNITUDE = "magnitude";
   const DRAW_MODE_RATE_OF_CHANGE = "rate-of-change";
 
   let isLoading = true;
+  let scene = null;
   let data = [];
-  let segments = [];
-  let drawMode = DRAW_MODE_XYZ;
-  let frameOffset = 107;
+  let drawMode = DRAW_MODE_MAGNITUDE;
 
-  async function fetchBvhFile() {
-    const response = await fetch(BVH_URL);
+  /**
+   * @param {string} url URL of the scene file
+   */
+  async function fetchSceneFile(url) {
+    const response = await fetch(url);
+    scene = await response.json();
+    scene.basePath = url.split("/").slice(0, -1).join("/");
+
+    await fetchBvhFile(`${scene.basePath}/${scene.mocapFile}`);
+
+    console.log(scene);
+
+    isLoading = false;
+  }
+
+  /**
+   * @param {string} bvh_url URL to BVH file
+   */
+  async function fetchBvhFile(bvh_url) {
+    const response = await fetch(bvh_url);
     const text = await response.text();
     const bones = parseBvh(text);
-    // console.log(bones);
     data = bones;
-    isLoading = false;
     if ($frameEnd === 0) {
       frameEnd.set(bones[0].frames.length);
     }
   }
 
-  async function fetchSegmentsFile() {
-    const response = await fetch(SEGMENTS_URL);
-    const json = await response.json();
-    console.log(json);
-    segments = json.segments;
-  }
+  onMount(async () => {
+    const sceneId = document.location.hash
+      ? document.location.hash.substring(1)
+      : "2023-11-09-oboe-slomo-clap";
+    const sceneUrl = `/scenes/${sceneId}.json`;
 
-  fetchBvhFile();
-  fetchSegmentsFile();
-  window.addEventListener("keypress", (e) => {
-    if (e.key === " ") {
-      e.preventDefault();
-      isPlaying.set(!$isPlaying);
-    }
+    await fetchSceneFile(sceneUrl);
+
+    window.addEventListener("keypress", (e) => {
+      if (e.key === " ") {
+        e.preventDefault();
+        isPlaying.set(!$isPlaying);
+      }
+    });
   });
 </script>
 
@@ -67,22 +77,80 @@
       <option value={DRAW_MODE_RATE_OF_CHANGE}>Rate of Change</option>
     </select>
 
-    <VideoPreview src={VIDEO_URL} {frameOffset} videoFps={25} mocapFps={30} />
-    <HandsOut {data} {frameOffset} />
+    <VideoPreview
+      src={`${scene.basePath}/${scene.videoFile}`}
+      mocapFrameOffset={scene.mocapFrameOffset}
+      videoFps={25}
+      mocapFps={30}
+    />
+    <HandsOut {data} frameOffset={scene.mocapFrameOffset} />
 
-    <SegmentPlot {segments} {frameOffset} />
+    <SegmentPlot
+      segments={scene.audioSegments}
+      frameOffset={scene.mocapFrameOffset}
+    />
 
-    <TimePlot {data} bone="RightFinger1Proximal" {drawMode} {frameOffset} />
-    <TimePlot {data} bone="RightFinger2Proximal" {drawMode} {frameOffset} />
-    <TimePlot {data} bone="RightFinger3Proximal" {drawMode} {frameOffset} />
-    <TimePlot {data} bone="RightFinger4Proximal" {drawMode} {frameOffset} />
-    <TimePlot {data} bone="RightFinger5Proximal" {drawMode} {frameOffset} />
+    <TimePlot
+      {data}
+      bone="RightFinger1Proximal"
+      {drawMode}
+      frameOffset={scene.mocapFrameOffset}
+    />
+    <TimePlot
+      {data}
+      bone="RightFinger2Proximal"
+      {drawMode}
+      frameOffset={scene.mocapFrameOffset}
+    />
+    <TimePlot
+      {data}
+      bone="RightFinger3Proximal"
+      {drawMode}
+      frameOffset={scene.mocapFrameOffset}
+    />
+    <TimePlot
+      {data}
+      bone="RightFinger4Proximal"
+      {drawMode}
+      frameOffset={scene.mocapFrameOffset}
+    />
+    <TimePlot
+      {data}
+      bone="RightFinger5Proximal"
+      {drawMode}
+      frameOffset={scene.mocapFrameOffset}
+    />
 
-    <TimePlot {data} bone="LeftFinger1Proximal" {drawMode} {frameOffset} />
-    <TimePlot {data} bone="LeftFinger2Proximal" {drawMode} {frameOffset} />
-    <TimePlot {data} bone="LeftFinger3Proximal" {drawMode} {frameOffset} />
-    <TimePlot {data} bone="LeftFinger4Proximal" {drawMode} {frameOffset} />
-    <TimePlot {data} bone="LeftFinger5Proximal" {drawMode} {frameOffset} />
+    <TimePlot
+      {data}
+      bone="LeftFinger1Proximal"
+      {drawMode}
+      frameOffset={scene.mocapFrameOffset}
+    />
+    <TimePlot
+      {data}
+      bone="LeftFinger2Proximal"
+      {drawMode}
+      frameOffset={scene.mocapFrameOffset}
+    />
+    <TimePlot
+      {data}
+      bone="LeftFinger3Proximal"
+      {drawMode}
+      frameOffset={scene.mocapFrameOffset}
+    />
+    <TimePlot
+      {data}
+      bone="LeftFinger4Proximal"
+      {drawMode}
+      frameOffset={scene.mocapFrameOffset}
+    />
+    <TimePlot
+      {data}
+      bone="LeftFinger5Proximal"
+      {drawMode}
+      frameOffset={scene.mocapFrameOffset}
+    />
     <PlayIndicator />
   {/if}
 </main>
