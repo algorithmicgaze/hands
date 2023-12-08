@@ -214,6 +214,7 @@
 </script>
 
 <div class="zoom-control">
+  <p>{scene.id}</p>
   <canvas
     width="1000"
     height="80"
@@ -231,6 +232,11 @@
     display: flex;
     flex-direction: column;
     gap: 4px;
+  }
+  p {
+    margin: 0;
+    padding: 0;
+    font-size: 11px;
   }
   div.times {
     width: 100%;

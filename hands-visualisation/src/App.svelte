@@ -3,7 +3,13 @@
 
   import ZoomControl from "./ZoomControl.svelte";
   import TimePlot from "./TimePlot.svelte";
-  import { frameIndex, frameStart, frameEnd, isPlaying } from "./stores";
+  import {
+    frameIndex,
+    frameStart,
+    frameEnd,
+    isPlaying,
+    frameUpdateTriggeredByUser,
+  } from "./stores";
   import { parseBvh } from "./bvh-parser";
   import VideoPreview from "./VideoPreview.svelte";
   import SegmentPlot from "./SegmentPlot.svelte";
@@ -38,6 +44,7 @@
       error = `Failed to parse scene file: ${e}`;
       return;
     }
+    scene.id = url.split("/").slice(-1)[0].split(".")[0];
     scene.basePath = url.split("/").slice(0, -1).join("/");
 
     await fetchBvhFile(`${scene.basePath}/${scene.mocapFile}`);
@@ -46,6 +53,8 @@
     console.log(scene.frameStart, scene.frameEnd);
     frameStart.set(scene.frameStart);
     frameEnd.set(scene.frameEnd);
+    frameUpdateTriggeredByUser.set(true);
+    frameIndex.set(scene.frameStart);
 
     console.log(scene);
 
@@ -84,18 +93,35 @@
 </script>
 
 <main>
-  <h1>Hands Visualiser</h1>
   {#if isLoading}
     <p>Loading...</p>
   {:else if error}
     <p class="error">{error}</p>
   {:else}
-    <ZoomControl {scene} />
-    <select bind:value={drawMode}>
-      <option value={DRAW_MODE_XYZ}>XYZ</option>
-      <option value={DRAW_MODE_MAGNITUDE}>Magnitude</option>
-      <option value={DRAW_MODE_RATE_OF_CHANGE}>Rate of Change</option>
-    </select>
+    <div class="control-header">
+      <ZoomControl {scene} />
+      <div class="play-controls">
+        <svg
+          class="play-button"
+          on:click={() => isPlaying.set(!$isPlaying)}
+          on:keypress={(e) => {}}
+          width="24"
+          height="24"
+          viewBox="0 0 24 24"
+        >
+          {#if $isPlaying}
+            <path d="M8 7h3v10H8zm5 0h3v10h-3z" fill="#aaa" />
+          {:else}
+            <path d="M7 6v12l10-6z" fill="#aaa" />
+          {/if}
+        </svg>
+        <select bind:value={drawMode}>
+          <option value={DRAW_MODE_XYZ}>XYZ</option>
+          <option value={DRAW_MODE_MAGNITUDE}>Magnitude</option>
+          <option value={DRAW_MODE_RATE_OF_CHANGE}>Rate of Change</option>
+        </select>
+      </div>
+    </div>
 
     <VideoPreview
       src={`${scene.basePath}/${scene.videoFile}`}
@@ -133,5 +159,23 @@
     align-items: center;
     gap: 0.5rem;
     padding-bottom: 300px;
+  }
+  .play-button {
+    border-radius: 50%;
+    background-color: #111;
+  }
+  .control-header {
+    position: sticky;
+    top: 0;
+    background-color: #242424;
+    padding-bottom: 8px;
+    z-index: 100;
+  }
+  .play-controls {
+    display: flex;
+    width: 100%;
+    gap: 0.5rem;
+    justify-content: space-between;
+    font-size: 0.8rem;
   }
 </style>
