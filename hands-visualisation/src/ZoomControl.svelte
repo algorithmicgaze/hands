@@ -1,15 +1,21 @@
 <script>
   import { onMount } from "svelte";
-  import { frameIndex, frameStart, frameEnd } from "./stores";
+  import {
+    frameIndex,
+    frameStart,
+    frameEnd,
+    frameUpdateTriggeredByUser,
+  } from "./stores";
+  import { mapValue } from "./math";
 
-  export let data;
+  export let scene;
 
   let dragMode;
 
   let canvasElement;
   let ctx;
 
-  let frameCount = data[0].frames.length;
+  let frameCount = scene.data[0].frames.length;
 
   onMount(() => {
     ctx = canvasElement.getContext("2d");
@@ -26,6 +32,13 @@
   function draw(frameIndex, frameStart, frameEnd) {
     if (!canvasElement) return;
 
+    ctx.fillStyle = "#242424";
+    ctx.fillRect(0, 0, canvasElement.width, 40);
+
+    ctx.fillStyle = "#333";
+    ctx.fillRect(0, 40, canvasElement.width, 40);
+
+    drawAudioSegments(frameIndex, frameStart, frameEnd);
     drawOverview(frameStart, frameEnd);
     drawFrameIndex(frameIndex);
   }
@@ -39,20 +52,18 @@
     let frameWidth = canvasElement.width / frameCount;
     let frameStartPixels = frameStart * frameWidth;
     let frameEndPixels = frameEnd * frameWidth;
-    ctx.fillStyle = "#333";
-    ctx.fillRect(0, 0, canvasElement.width, 50);
-    ctx.strokeStyle = "red";
+    ctx.strokeStyle = "#aaa";
     ctx.lineWidth = 2;
     ctx.strokeRect(
-      frameStartPixels,
-      1.5,
-      frameEndPixels - frameStartPixels,
-      48
+      frameStartPixels - 0.5,
+      40.5,
+      frameEndPixels - frameStartPixels - 0.5,
+      39.5
     );
-    ctx.fillStyle = "red";
+    ctx.fillStyle = "#aaa";
 
-    ctx.fillRect(frameStartPixels - 3, 20, 5, 10);
-    ctx.fillRect(frameEndPixels - 3, 20, 5, 10);
+    ctx.fillRect(frameStartPixels - 3.5, 55, 5, 10);
+    ctx.fillRect(frameEndPixels - 4, 55, 5, 10);
 
     // ctx.beginPath();
     // ctx.moveTo($frameIndex * frameWidth, 0);
@@ -65,12 +76,42 @@
    * @param {number} frameIndex The current frame index
    */
   function drawFrameIndex(frameIndex) {
-    ctx.strokeStyle = "blue";
+    ctx.strokeStyle = "#f9423f";
     ctx.lineWidth = 2;
     ctx.beginPath();
     let frameWidth = canvasElement.width / frameCount;
-    ctx.moveTo(frameIndex * frameWidth, 0);
-    ctx.lineTo(frameIndex * frameWidth, canvasElement.height);
+    let x = frameIndex * frameWidth;
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, canvasElement.height);
+    ctx.stroke();
+    ctx.fillStyle = "#f9423f";
+    ctx.beginPath();
+    ctx.moveTo(x - 10, 0);
+    ctx.lineTo(x + 10, 0);
+    ctx.lineTo(x + 10, 10);
+    ctx.lineTo(x, 20);
+    ctx.lineTo(x - 10, 10);
+    ctx.fill();
+  }
+
+  /**
+   * @param {number} frameIndex
+   * @param {number} frameStart
+   * @param {number} frameEnd
+   */
+  function drawAudioSegments(frameIndex, frameStart, frameEnd) {
+    ctx.strokeStyle = "#888";
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+
+    for (let [start, end] of scene.audioSegments) {
+      start = start * 30;
+      end = end * 30;
+      let x1 = mapValue(start, 0, frameCount, 0, canvasElement.width);
+      let x2 = mapValue(end, 0, frameCount, 0, canvasElement.width);
+      ctx.moveTo(x1, canvasElement.height - 6);
+      ctx.lineTo(x2, canvasElement.height - 6);
+    }
     ctx.stroke();
   }
 
@@ -83,7 +124,12 @@
     let frameWidth = canvasElement.width / frameCount;
     let frameStartPixels = $frameStart * frameWidth;
     let frameEndPixels = $frameEnd * frameWidth;
-    if (e.offsetX > frameStartPixels - 5 && e.offsetX < frameStartPixels + 5) {
+    if (e.offsetY < 40) {
+      dragMode = "frameIndex";
+    } else if (
+      e.offsetX > frameStartPixels - 5 &&
+      e.offsetX < frameStartPixels + 5
+    ) {
       dragMode = "frameStart";
     } else if (
       e.offsetX > frameEndPixels - 5 &&
@@ -114,7 +160,15 @@
     let left = canvasElement.getBoundingClientRect().left;
     let offsetX = e.clientX - left;
 
-    if (dragMode === "frameStart") {
+    if (dragMode === "frameIndex") {
+      let newFrameIndex = Math.floor(
+        offsetX / (canvasElement.width / frameCount)
+      );
+      newFrameIndex = Math.max(0, newFrameIndex);
+      newFrameIndex = Math.min(frameCount - 1, newFrameIndex);
+      frameUpdateTriggeredByUser.set(true);
+      frameIndex.set(newFrameIndex);
+    } else if (dragMode === "frameStart") {
       let newFrameStart = (offsetX / canvasElement.width) * frameCount;
       if (newFrameStart < 0) {
         newFrameStart = 0;
@@ -162,7 +216,7 @@
 <div class="zoom-control">
   <canvas
     width="1000"
-    height="50"
+    height="80"
     bind:this={canvasElement}
     on:mousedown={onMouseDown}
   />

@@ -191,7 +191,7 @@
       (canvasElement.width / (frameEnd - frameStart));
 
     // Draw frame index
-    ctx.strokeStyle = "blue";
+    ctx.strokeStyle = "#f9423f";
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(frameIndexPixels, 0);
@@ -295,8 +295,8 @@
     )}`;
 
     tooltipX = e.offsetX;
-    frameUpdateTriggeredByUser.set(true);
-    frameIndex.set(frame);
+    // frameUpdateTriggeredByUser.set(true);
+    // frameIndex.set(frame);
   }
 
   /**

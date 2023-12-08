@@ -90,7 +90,7 @@
   {:else if error}
     <p class="error">{error}</p>
   {:else}
-    <ZoomControl {data} />
+    <ZoomControl {scene} />
     <select bind:value={drawMode}>
       <option value={DRAW_MODE_XYZ}>XYZ</option>
       <option value={DRAW_MODE_MAGNITUDE}>Magnitude</option>
@@ -105,11 +105,6 @@
     />
     <HandsOut
       {data}
-      segments={scene.audioSegments}
-      frameOffset={scene.mocapFrameOffset}
-    />
-
-    <SegmentPlot
       segments={scene.audioSegments}
       frameOffset={scene.mocapFrameOffset}
     />
