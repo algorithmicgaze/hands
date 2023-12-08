@@ -41,6 +41,11 @@
     scene.basePath = url.split("/").slice(0, -1).join("/");
 
     await fetchBvhFile(`${scene.basePath}/${scene.mocapFile}`);
+    scene.frameStart = scene.startFrame || 0;
+    scene.frameEnd = scene.endFrame || scene.data[0].frames.length;
+    console.log(scene.frameStart, scene.frameEnd);
+    frameStart.set(scene.frameStart);
+    frameEnd.set(scene.frameEnd);
 
     console.log(scene);
 
@@ -55,6 +60,7 @@
     const text = await response.text();
     const bones = parseBvh(text);
     data = bones;
+    scene.data = bones;
     if ($frameEnd === 0) {
       frameEnd.set(bones[0].frames.length);
     }
@@ -84,7 +90,6 @@
   {:else if error}
     <p class="error">{error}</p>
   {:else}
-    <p>Loaded {data.length} rows</p>
     <ZoomControl {data} />
     <select bind:value={drawMode}>
       <option value={DRAW_MODE_XYZ}>XYZ</option>
@@ -98,74 +103,29 @@
       videoFps={25}
       mocapFps={30}
     />
-    <HandsOut {data} frameOffset={scene.mocapFrameOffset} />
+    <HandsOut
+      {data}
+      segments={scene.audioSegments}
+      frameOffset={scene.mocapFrameOffset}
+    />
 
     <SegmentPlot
       segments={scene.audioSegments}
       frameOffset={scene.mocapFrameOffset}
     />
 
-    <TimePlot
-      {data}
-      bone="RightFinger1Proximal"
-      {drawMode}
-      frameOffset={scene.mocapFrameOffset}
-    />
-    <TimePlot
-      {data}
-      bone="RightFinger2Proximal"
-      {drawMode}
-      frameOffset={scene.mocapFrameOffset}
-    />
-    <TimePlot
-      {data}
-      bone="RightFinger3Proximal"
-      {drawMode}
-      frameOffset={scene.mocapFrameOffset}
-    />
-    <TimePlot
-      {data}
-      bone="RightFinger4Proximal"
-      {drawMode}
-      frameOffset={scene.mocapFrameOffset}
-    />
-    <TimePlot
-      {data}
-      bone="RightFinger5Proximal"
-      {drawMode}
-      frameOffset={scene.mocapFrameOffset}
-    />
+    <TimePlot {scene} bone="LeftFinger1Proximal" {drawMode} />
+    <TimePlot {scene} bone="LeftFinger2Proximal" {drawMode} />
+    <TimePlot {scene} bone="LeftFinger3Proximal" {drawMode} />
+    <TimePlot {scene} bone="LeftFinger4Proximal" {drawMode} />
+    <TimePlot {scene} bone="LeftFinger5Proximal" {drawMode} />
 
-    <TimePlot
-      {data}
-      bone="LeftFinger1Proximal"
-      {drawMode}
-      frameOffset={scene.mocapFrameOffset}
-    />
-    <TimePlot
-      {data}
-      bone="LeftFinger2Proximal"
-      {drawMode}
-      frameOffset={scene.mocapFrameOffset}
-    />
-    <TimePlot
-      {data}
-      bone="LeftFinger3Proximal"
-      {drawMode}
-      frameOffset={scene.mocapFrameOffset}
-    />
-    <TimePlot
-      {data}
-      bone="LeftFinger4Proximal"
-      {drawMode}
-      frameOffset={scene.mocapFrameOffset}
-    />
-    <TimePlot
-      {data}
-      bone="LeftFinger5Proximal"
-      {drawMode}
-      frameOffset={scene.mocapFrameOffset}
-    />
+    <TimePlot {scene} bone="RightFinger1Proximal" {drawMode} />
+    <TimePlot {scene} bone="RightFinger2Proximal" {drawMode} />
+    <TimePlot {scene} bone="RightFinger3Proximal" {drawMode} />
+    <TimePlot {scene} bone="RightFinger4Proximal" {drawMode} />
+    <TimePlot {scene} bone="RightFinger5Proximal" {drawMode} />
+
     <PlayIndicator />
     <FootPedal />
   {/if}

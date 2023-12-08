@@ -159,9 +159,29 @@
   $: draw($frameIndex, $frameStart, $frameEnd);
 </script>
 
-<canvas
-  width="1000"
-  height="50"
-  bind:this={canvasElement}
-  on:mousedown={onMouseDown}
-/>
+<div class="zoom-control">
+  <canvas
+    width="1000"
+    height="50"
+    bind:this={canvasElement}
+    on:mousedown={onMouseDown}
+  />
+  <div class="times">
+    <div class="time">{Math.floor($frameStart)}</div>
+    <div class="time">{Math.floor($frameEnd)}</div>
+  </div>
+</div>
+
+<style>
+  .zoom-control {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  div.times {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+  }
+</style>

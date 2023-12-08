@@ -8,10 +8,9 @@
   } from "./stores";
   import { mapValue } from "./math";
 
-  export let data;
+  export let scene;
   export let bone;
   export let drawMode;
-  export let frameOffset;
 
   let canvasElement;
   let ctx;
@@ -33,7 +32,7 @@
   });
 
   function cacheGraphData(drawMode) {
-    let boneData = data.find((d) => d.name === bone);
+    let boneData = scene.data.find((d) => d.name === bone);
     channelData = [];
     let frameData = [];
     graphMin = Infinity;
@@ -49,13 +48,15 @@
         let rx = xs[i];
         let ry = ys[i];
         let rz = zs[i];
-        graphMin = Math.min(graphMin, rx, ry, rz);
-        graphMax = Math.max(graphMax, rx, ry, rz);
+        if (i >= scene.frameStart && i <= scene.frameEnd) {
+          graphMin = Math.min(graphMin, rx, ry, rz);
+          graphMax = Math.max(graphMax, rx, ry, rz);
+        }
       }
       graphMin -= 10;
       graphMax += 10;
     } else if (drawMode === "magnitude") {
-      let boneData = data.find((d) => d.name === bone);
+      let boneData = scene.data.find((d) => d.name === bone);
       let mags = [];
       channelData = [mags];
       for (let i = 0; i < boneData.frames.length; i++) {
@@ -65,11 +66,13 @@
           frameData.rotation[1] * frameData.rotation[1] +
           frameData.rotation[2] * frameData.rotation[2];
         mags.push(mag);
-        graphMin = Math.min(graphMin, mag);
-        graphMax = Math.max(graphMax, mag);
+        if (i >= scene.frameStart && i <= scene.frameEnd) {
+          graphMin = Math.min(graphMin, mag);
+          graphMax = Math.max(graphMax, mag);
+        }
       }
     } else if (drawMode === "rate-of-change") {
-      let boneData = data.find((d) => d.name === bone);
+      let boneData = scene.data.find((d) => d.name === bone);
       let deltas = [];
       channelData = [deltas];
       for (let i = 0; i < boneData.frames.length; i++) {
@@ -98,8 +101,10 @@
         // Compare current magnitude with moving average
         let delta = mag - movingAverage;
         deltas.push(delta);
-        graphMin = Math.min(graphMin, delta);
-        graphMax = Math.max(graphMax, delta);
+        if (i >= scene.frameStart && i <= scene.frameEnd) {
+          graphMin = Math.min(graphMin, delta);
+          graphMax = Math.max(graphMax, delta);
+        }
 
         // let prevMag =
         //   prevFrameData.rotation[0] * prevFrameData.rotation[0] +
@@ -131,7 +136,7 @@
    * @param {number} frameEnd
    */
   function drawZoomed(frameIndex, frameStart, frameEnd) {
-    let boneData = data.find((d) => d.name === bone);
+    let boneData = scene.data.find((d) => d.name === bone);
     // Draw the zoomed in portion of the timeline
     ctx.fillStyle = "black";
 
@@ -201,8 +206,8 @@
    * @param {string} strokeStyle
    */
   function drawChannel(values, frameStart, frameEnd, min, max, strokeStyle) {
-    min = Math.min(...values.slice(frameStart, frameEnd));
-    max = Math.max(...values.slice(frameStart, frameEnd));
+    // min = Math.min(...values.slice(frameStart, frameEnd));
+    // max = Math.max(...values.slice(frameStart, frameEnd));
     ctx.strokeStyle = strokeStyle;
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -239,6 +244,9 @@
     //   frameIndex.set(frame);
   }
 
+  /**
+   * @param {number} time
+   */
   function padTime(time) {
     return time < 10 ? `0${time}` : time;
   }
@@ -252,7 +260,7 @@
     let frameWidth = windowWidth / 1000;
     let frame = Math.floor($frameStart + (windowWidth * e.offsetX) / 1000);
 
-    let boneData = data.find((d) => d.name === bone);
+    let boneData = scene.data.find((d) => d.name === bone);
     let frameData = boneData.frames[frame];
     let prevFrameData = boneData.frames[frame - 1];
 
@@ -270,7 +278,7 @@
       prevZValue * prevZValue;
     let rateOfChange = magnitude - prevMagnitude;
 
-    let offsetFrame = frame + frameOffset;
+    let offsetFrame = frame + scene.mocapFrameOffset;
     let frameHours = padTime(Math.floor(offsetFrame / 30 / 60 / 60) + 1); // + 1 to be compatible with the Davinci Resolve timecode
     let frameMinutes = padTime(Math.floor((offsetFrame / 30 / 60) % 60));
     let frameSeconds = padTime(Math.floor((offsetFrame / 30) % 60));
@@ -323,10 +331,6 @@
     <span class="tooltip__value">{tooltipXYZ}</span>
     <span class="tooltip__value">{tooltipMagnitude}</span>
   </div>
-  <div class="times">
-    <div class="time">{Math.floor($frameStart)}</div>
-    <div class="time">{Math.floor($frameEnd)}</div>
-  </div>
 </div>
 
 <style>
@@ -341,12 +345,6 @@
     padding: 0;
     color: #ccc;
     font-size: 11px;
-  }
-
-  div.times {
-    width: 100%;
-    display: flex;
-    justify-content: space-between;
   }
 
   .tooltip {
