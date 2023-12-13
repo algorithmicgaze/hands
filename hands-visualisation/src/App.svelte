@@ -16,6 +16,7 @@
   import HandsOut from "./HandsOut.svelte";
   import PlayIndicator from "./PlayIndicator.svelte";
   import FootPedal from "./FootPedal.svelte";
+  import { detectEvents } from "./event-detector";
 
   const DRAW_MODE_XYZ = "xyz";
   const DRAW_MODE_MAGNITUDE = "magnitude";
@@ -25,7 +26,7 @@
   let error = null;
   let scene = null;
   let data = [];
-  let drawMode = DRAW_MODE_MAGNITUDE;
+  let drawMode = DRAW_MODE_RATE_OF_CHANGE;
 
   /**
    * @param {string} url URL of the scene file
@@ -50,13 +51,13 @@
     await fetchBvhFile(`${scene.basePath}/${scene.mocapFile}`);
     scene.frameStart = scene.startFrame || 0;
     scene.frameEnd = scene.endFrame || scene.data[0].frames.length;
-    console.log(scene.frameStart, scene.frameEnd);
+
+    scene.events = detectEvents(scene);
+
     frameStart.set(scene.frameStart);
     frameEnd.set(scene.frameEnd);
     frameUpdateTriggeredByUser.set(true);
     frameIndex.set(scene.frameStart);
-
-    console.log(scene);
 
     isLoading = false;
   }

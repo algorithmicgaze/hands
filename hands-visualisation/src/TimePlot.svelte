@@ -186,6 +186,10 @@
       );
     }
 
+    if (scene?.events) {
+      drawEvents(scene.events[bone], frameStart, frameEnd);
+    }
+
     let frameIndexPixels =
       (frameIndex - frameStart) *
       (canvasElement.width / (frameEnd - frameStart));
@@ -223,6 +227,25 @@
       }
     }
     ctx.stroke();
+  }
+
+  function drawEvents(events, plotStartFrame, plotEndFrame) {
+    console.log(events);
+    ctx.fillStyle = "#fff";
+    ctx.globalAlpha = 0.3;
+    for (let [startFrame, endFrame] of events) {
+      if (endFrame < plotStartFrame || startFrame > plotEndFrame) continue;
+      let frameStart = Math.max(startFrame, plotStartFrame);
+      let frameEnd = Math.min(endFrame, plotEndFrame);
+      let xStart =
+        ((frameStart - plotStartFrame) * canvasElement.width) /
+        (plotEndFrame - plotStartFrame);
+      let xEnd =
+        ((frameEnd - plotStartFrame) * canvasElement.width) /
+        (plotEndFrame - plotStartFrame);
+      ctx.fillRect(xStart, 0, xEnd - xStart, canvasElement.height);
+    }
+    ctx.globalAlpha = 1;
   }
 
   /**
