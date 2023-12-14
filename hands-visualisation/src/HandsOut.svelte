@@ -3,14 +3,13 @@
   import { onMount } from "svelte";
   import { frameIndex, isPlaying } from "./stores";
 
-  export let data;
-  export let frameOffset;
+  export let scene;
 
   let client;
   let connected = false;
   let handPattern = Array(10).fill(false);
   // send once per second
-  let sendRate = 1000;
+  let sendRate = 2000;
   let prevPacketTime = 0;
 
   onMount(() => {
@@ -59,42 +58,25 @@
     requestAnimationFrame(update);
   }
 
-  function hasAudio(bone) {
-    // Convert current frameIndex to time, taking frameOffset into account.
-    let time = ($frameIndex + frameOffset) / 25;
+  function boneTrigger(bone) {
+    // The bone needs to be triggered when we're at the start of an event.
+    const events = scene.eventMap[bone];
+    const thisFrameIsInEvent = frameIsInEvent(events, $frameIndex);
+    const prevFrameIsInEvent = frameIsInEvent(events, $frameIndex - 1);
+    if (thisFrameIsInEvent && !prevFrameIsInEvent) {
+      return true;
+    } else {
+      return false;
+    }
   }
 
-  function boneTrigger(bone) {
-    let boneData = data.find((d) => d.name === bone);
-
-    // Calculate the average magnitude of the past 10 frames
-    const n = 15;
-    let magSum = 0;
-    let samples = 0;
-    for (let i = 0; i < n; i++) {
-      let frameData = boneData.frames[$frameIndex - i];
-      if (frameData) {
-        magSum +=
-          frameData.rotation[0] ** 2 +
-          frameData.rotation[1] ** 2 +
-          frameData.rotation[2] ** 2;
-        samples += 1;
+  function frameIsInEvent(events, frameIndex) {
+    for (let [start, end] of events) {
+      if (frameIndex >= start && frameIndex <= end) {
+        return true;
       }
     }
-    let magAvg = magSum / samples;
-
-    let frameData = boneData.frames[$frameIndex];
-    let mag =
-      frameData.rotation[0] ** 2 +
-      frameData.rotation[1] ** 2 +
-      frameData.rotation[2] ** 2;
-
-    let delta = Math.abs(mag - magAvg);
-    if (bone === "RightFinger2Proximal") {
-      console.log(bone, delta);
-    }
-
-    return delta > 50;
+    return false;
   }
 </script>
 

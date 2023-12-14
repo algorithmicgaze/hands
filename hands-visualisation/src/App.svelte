@@ -132,11 +132,7 @@
       videoFps={25}
       mocapFps={30}
     />
-    <HandsOut
-      {data}
-      segments={scene.audioSegments}
-      frameOffset={scene.mocapFrameOffset}
-    />
+    <HandsOut {scene} />
 
     <TimePlot {scene} bone="LeftFinger1Proximal" {drawMode} />
     <TimePlot {scene} bone="LeftFinger2Proximal" {drawMode} />
