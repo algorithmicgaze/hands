@@ -3,7 +3,7 @@
 import { videoTimeToMocapFrame } from "./math";
 
 const MOCAP_FPS = 30;
-const RATE_OF_CHANGE_THRESHOLD = 150;
+const RATE_OF_CHANGE_THRESHOLD = 200;
 const BONE_NAMES = [
   "LeftFinger1Proximal",
   "LeftFinger2Proximal",
