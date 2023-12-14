@@ -14,9 +14,9 @@
 
   onMount(() => {
     client = mqtt.connect(
-      "wss://lieme:x7iNJWfycxrdEz51@lieme.cloud.shiftr.io",
+      "wss://algorithmicgaze:a5U1U292uh62c8uh@algorithmicgaze.cloud.shiftr.io",
       {
-        clientId: "hands_visualizer",
+        clientId: "hands-web",
       }
     );
     client.on("connect", () => {
