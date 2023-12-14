@@ -3,7 +3,7 @@
 import { videoTimeToMocapFrame } from "./math";
 
 const MOCAP_FPS = 30;
-const RATE_OF_CHANGE_THRESHOLD = 200;
+const BASE_THRESHOLD = 150;
 const BONE_NAMES = [
   "LeftFinger1Proximal",
   "LeftFinger2Proximal",
@@ -16,6 +16,18 @@ const BONE_NAMES = [
   "RightFinger4Proximal",
   "RightFinger5Proximal",
 ];
+const BONE_THRESHOLD_MULTIPLIER_MAP = {
+  LeftFinger1Proximal: 1.0,
+  LeftFinger2Proximal: 1.0,
+  LeftFinger3Proximal: 1.5,
+  LeftFinger4Proximal: 3.0,
+  LeftFinger5Proximal: 3.3,
+  RightFinger1Proximal: 1.0,
+  RightFinger2Proximal: 1.0,
+  RightFinger3Proximal: 1.0,
+  RightFinger4Proximal: 3.0,
+  RightFinger5Proximal: 3.3,
+};
 
 function frameIsInAudioSegment(frameIndex, audioSegments, mocapFrameOffset) {
   for (const [audioStartTime, audioEndTime] of audioSegments) {
@@ -37,6 +49,7 @@ export function detectEvents(scene) {
   let boneEventMap = {};
 
   for (const boneName of BONE_NAMES) {
+    const threshold = BASE_THRESHOLD * BONE_THRESHOLD_MULTIPLIER_MAP[boneName];
     const boneData = scene.data.find((d) => d.name === boneName);
     const boneRos = calculateRateOfChange(boneData);
     let events = [];
@@ -44,7 +57,7 @@ export function detectEvents(scene) {
     for (let frame = scene.frameStart; frame <= scene.frameEnd; frame++) {
       const ros = boneRos[frame];
       if (
-        (ros > RATE_OF_CHANGE_THRESHOLD || ros < -RATE_OF_CHANGE_THRESHOLD) &&
+        (ros > threshold || ros < -threshold) &&
         frameIsInAudioSegment(
           frame,
           scene.audioSegments,
