@@ -52,7 +52,9 @@
     scene.frameStart = scene.startFrame || 0;
     scene.frameEnd = scene.endFrame || scene.data[0].frames.length;
 
-    scene.events = detectEvents(scene);
+    const [rosMap, eventMap] = detectEvents(scene);
+    scene.rosMap = rosMap;
+    scene.eventMap = eventMap;
 
     frameStart.set(scene.frameStart);
     frameEnd.set(scene.frameEnd);

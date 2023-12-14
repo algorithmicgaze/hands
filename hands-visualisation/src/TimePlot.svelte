@@ -186,8 +186,8 @@
       );
     }
 
-    if (scene?.events) {
-      drawEvents(scene.events[bone], frameStart, frameEnd);
+    if (scene?.eventMap) {
+      drawEvents(scene.eventMap[bone], frameStart, frameEnd);
     }
 
     let frameIndexPixels =
@@ -230,7 +230,6 @@
   }
 
   function drawEvents(events, plotStartFrame, plotEndFrame) {
-    console.log(events);
     ctx.fillStyle = "#fff";
     ctx.globalAlpha = 0.3;
     for (let [startFrame, endFrame] of events) {
@@ -299,7 +298,7 @@
       prevXValue * prevXValue +
       prevYValue * prevYValue +
       prevZValue * prevZValue;
-    let rateOfChange = magnitude - prevMagnitude;
+    let rateOfChange = scene.rosMap[bone][frame];
 
     let offsetFrame = frame + scene.mocapFrameOffset;
     let frameHours = padTime(Math.floor(offsetFrame / 30 / 60 / 60) + 1); // + 1 to be compatible with the Davinci Resolve timecode
