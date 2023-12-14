@@ -1,5 +1,7 @@
 // This code detectzs the finger movement events and marks them.
 
+import { videoTimeToMocapFrame } from "./math";
+
 const MOCAP_FPS = 30;
 const BONE_NAMES = [
   "LeftFinger1Proximal",
@@ -14,11 +16,14 @@ const BONE_NAMES = [
   "RightFinger5Proximal",
 ];
 
-function frameIsInAudioSegment(frameIndex, audioSegments) {
+function frameIsInAudioSegment(frameIndex, audioSegments, mocapFrameOffset) {
   for (const [audioStartTime, audioEndTime] of audioSegments) {
     // Normalize everything to mocap frames.
-    const audioStartFrame = Math.floor(audioStartTime * MOCAP_FPS);
-    const audioEndFrame = Math.floor(audioEndTime * MOCAP_FPS);
+    const audioStartFrame = videoTimeToMocapFrame(
+      audioStartTime,
+      mocapFrameOffset
+    );
+    const audioEndFrame = videoTimeToMocapFrame(audioEndTime, mocapFrameOffset);
     if (frameIndex >= audioStartFrame && frameIndex <= audioEndFrame) {
       return true;
     }
@@ -28,7 +33,6 @@ function frameIsInAudioSegment(frameIndex, audioSegments) {
 
 export function detectEvents(scene) {
   let boneEvents = {};
-  console.log(scene);
 
   for (const boneName of BONE_NAMES) {
     const boneData = scene.data.find((d) => d.name === boneName);
@@ -37,7 +41,14 @@ export function detectEvents(scene) {
     let segmentStart = null;
     for (let frame = scene.frameStart; frame <= scene.frameEnd; frame++) {
       const ros = boneRos[frame];
-      if (ros > 100 && frameIsInAudioSegment(frame, scene.audioSegments)) {
+      if (
+        ros > 100 &&
+        frameIsInAudioSegment(
+          frame,
+          scene.audioSegments,
+          scene.mocapFrameOffset
+        )
+      ) {
         if (segmentStart === null) {
           // This means we've found the start of a new segment
           segmentStart = frame;
@@ -53,7 +64,6 @@ export function detectEvents(scene) {
     }
     boneEvents[boneName] = events;
   }
-  console.log(boneEvents);
   return boneEvents;
 }
 
