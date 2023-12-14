@@ -44,10 +44,8 @@
     }
 
     let handString = handPattern.map((finger) => (finger ? 1 : 0)).join("");
-    if (handString !== prevPacket) {
-      if (connected) {
-        client.publish("hands", handString);
-      }
+    if (connected && handString !== prevPacket) {
+      client.publish("hands", handString);
       prevPacket = handString;
     }
 
@@ -58,8 +56,7 @@
     // The bone needs to be triggered when we're at the start of an event.
     const events = scene.eventMap[bone];
     const thisFrameIsInEvent = frameIsInEvent(events, $frameIndex);
-    const prevFrameIsInEvent = frameIsInEvent(events, $frameIndex - 5);
-    if (thisFrameIsInEvent && !prevFrameIsInEvent) {
+    if (thisFrameIsInEvent) {
       return 1;
     } else {
       return 0;
