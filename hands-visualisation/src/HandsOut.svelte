@@ -9,8 +9,9 @@
   let connected = false;
   let handPattern = Array(10).fill(false);
   // send once per second
-  let sendRate = 2000;
+  let sendRate = 1000;
   let prevPacketTime = 0;
+  let prevPacket = "";
 
   onMount(() => {
     client = mqtt.connect(
@@ -38,23 +39,18 @@
       handPattern[7] = boneTrigger("RightFinger3Proximal");
       handPattern[8] = boneTrigger("RightFinger4Proximal");
       handPattern[9] = boneTrigger("RightFinger5Proximal");
-
-      if (Date.now() - prevPacketTime > sendRate) {
-        prevPacketTime = Date.now();
-        let handString = handPattern.map((finger) => (finger ? 1 : 0)).join("");
-        if (connected) {
-          client.publish("hands", handString);
-        }
-      }
     } else {
       handPattern = Array(10).fill(false);
-      if (Date.now() - prevPacketTime > sendRate) {
-        prevPacketTime = Date.now();
-        if (connected) {
-          client.publish("hands", "0000000000");
-        }
-      }
     }
+
+    let handString = handPattern.map((finger) => (finger ? 1 : 0)).join("");
+    if (handString !== prevPacket) {
+      if (connected) {
+        client.publish("hands", handString);
+      }
+      prevPacket = handString;
+    }
+
     requestAnimationFrame(update);
   }
 
@@ -62,11 +58,11 @@
     // The bone needs to be triggered when we're at the start of an event.
     const events = scene.eventMap[bone];
     const thisFrameIsInEvent = frameIsInEvent(events, $frameIndex);
-    const prevFrameIsInEvent = frameIsInEvent(events, $frameIndex - 1);
+    const prevFrameIsInEvent = frameIsInEvent(events, $frameIndex - 5);
     if (thisFrameIsInEvent && !prevFrameIsInEvent) {
-      return true;
+      return 1;
     } else {
-      return false;
+      return 0;
     }
   }
 
