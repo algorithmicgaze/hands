@@ -7,7 +7,7 @@
     isPlaying,
   } from "./stores";
   import { onMount } from "svelte";
-  import { frameToVideoTime } from "./math";
+  import { mocapFrameToVideoTime } from "./math";
   let videoElement;
   export let src = "";
   export let mocapFrameOffset = 0;
@@ -18,17 +18,11 @@
   $: {
     if (videoElement) {
       if ($frameUpdateTriggeredByUser) {
-        videoElement.currentTime =
-          $frameIndex / mocapFps + mocapFrameOffset / videoFps;
-        videoElement.currentTime = frameToVideoTime({
-          frameIndex: $frameIndex,
-          mocapFrameOffset,
-          mocapFps,
-          videoFps,
-        });
+        videoElement.currentTime = mocapFrameToVideoTime(
+          $frameIndex,
+          mocapFrameOffset
+        );
       }
-
-      //   videoElement.currentTime = $frameIndex / mocapFps + mocapFrameOffset / fps;
 
       if ($isPlaying && prevPlaying !== $isPlaying) {
         videoElement.play();

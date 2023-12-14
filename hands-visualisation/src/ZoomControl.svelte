@@ -6,7 +6,7 @@
     frameEnd,
     frameUpdateTriggeredByUser,
   } from "./stores";
-  import { mapValue } from "./math";
+  import { mapValue, videoTimeToMocapFrame } from "./math";
 
   export let scene;
 
@@ -105,10 +105,10 @@
     ctx.beginPath();
 
     for (let [start, end] of scene.audioSegments) {
-      start = start * 30;
-      end = end * 30;
-      let x1 = mapValue(start, 0, frameCount, 0, canvasElement.width);
-      let x2 = mapValue(end, 0, frameCount, 0, canvasElement.width);
+      const startFrame = videoTimeToMocapFrame(start, scene.mocapFrameOffset);
+      const endFrame = videoTimeToMocapFrame(end, scene.mocapFrameOffset);
+      let x1 = mapValue(startFrame, 0, frameCount, 0, canvasElement.width);
+      let x2 = mapValue(endFrame, 0, frameCount, 0, canvasElement.width);
       ctx.moveTo(x1, canvasElement.height - 6);
       ctx.lineTo(x2, canvasElement.height - 6);
     }
