@@ -1,14 +1,20 @@
 <script>
   import { onMount } from "svelte";
-  import { frameIndex, frameStart, frameEnd } from "./stores";
+  import {
+    frameIndex,
+    frameStart,
+    frameEnd,
+    frameUpdateTriggeredByUser,
+  } from "./stores";
   import { mapValue } from "./math";
 
-  export let data;
+  export let scene;
   export let bone;
   export let drawMode;
 
   let canvasElement;
   let ctx;
+  let tooltipTime;
   let tooltipFrame;
   let tooltipXYZ;
   let tooltipMagnitude;
@@ -26,11 +32,13 @@
   });
 
   function cacheGraphData(drawMode) {
-    let boneData = data.find((d) => d.name === bone);
+    let boneData = scene.data.find((d) => d.name === bone);
     channelData = [];
     let frameData = [];
     graphMin = Infinity;
     graphMax = -Infinity;
+    let n = 15; // half a second (30fps / 2)
+    let movingAverageQueue = [];
     if (drawMode === "xyz") {
       const xs = boneData.frames.map((f) => f.rotation[0]);
       const ys = boneData.frames.map((f) => f.rotation[1]);
@@ -40,13 +48,15 @@
         let rx = xs[i];
         let ry = ys[i];
         let rz = zs[i];
-        graphMin = Math.min(graphMin, rx, ry, rz);
-        graphMax = Math.max(graphMax, rx, ry, rz);
+        if (i >= scene.frameStart && i <= scene.frameEnd) {
+          graphMin = Math.min(graphMin, rx, ry, rz);
+          graphMax = Math.max(graphMax, rx, ry, rz);
+        }
       }
       graphMin -= 10;
       graphMax += 10;
     } else if (drawMode === "magnitude") {
-      let boneData = data.find((d) => d.name === bone);
+      let boneData = scene.data.find((d) => d.name === bone);
       let mags = [];
       channelData = [mags];
       for (let i = 0; i < boneData.frames.length; i++) {
@@ -56,11 +66,13 @@
           frameData.rotation[1] * frameData.rotation[1] +
           frameData.rotation[2] * frameData.rotation[2];
         mags.push(mag);
-        graphMin = Math.min(graphMin, mag);
-        graphMax = Math.max(graphMax, mag);
+        if (i >= scene.frameStart && i <= scene.frameEnd) {
+          graphMin = Math.min(graphMin, mag);
+          graphMax = Math.max(graphMax, mag);
+        }
       }
     } else if (drawMode === "rate-of-change") {
-      let boneData = data.find((d) => d.name === bone);
+      let boneData = scene.data.find((d) => d.name === bone);
       let deltas = [];
       channelData = [deltas];
       for (let i = 0; i < boneData.frames.length; i++) {
@@ -74,14 +86,34 @@
           frameData.rotation[0] * frameData.rotation[0] +
           frameData.rotation[1] * frameData.rotation[1] +
           frameData.rotation[2] * frameData.rotation[2];
-        let prevMag =
-          prevFrameData.rotation[0] * prevFrameData.rotation[0] +
-          prevFrameData.rotation[1] * prevFrameData.rotation[1] +
-          prevFrameData.rotation[2] * prevFrameData.rotation[2];
-        let delta = mag - prevMag;
+
+        // Update the moving average queue
+        movingAverageQueue.push(mag);
+        if (movingAverageQueue.length > n) {
+          movingAverageQueue.shift();
+        }
+
+        // Calculate moving average
+        let movingAverage =
+          movingAverageQueue.reduce((a, b) => a + b, 0) /
+          movingAverageQueue.length;
+
+        // Compare current magnitude with moving average
+        let delta = mag - movingAverage;
         deltas.push(delta);
-        graphMin = Math.min(graphMin, delta);
-        graphMax = Math.max(graphMax, delta);
+        if (i >= scene.frameStart && i <= scene.frameEnd) {
+          graphMin = Math.min(graphMin, delta);
+          graphMax = Math.max(graphMax, delta);
+        }
+
+        // let prevMag =
+        //   prevFrameData.rotation[0] * prevFrameData.rotation[0] +
+        //   prevFrameData.rotation[1] * prevFrameData.rotation[1] +
+        //   prevFrameData.rotation[2] * prevFrameData.rotation[2];
+        // let delta = mag - prevMag;
+        // deltas.push(delta);
+        // graphMin = Math.min(graphMin, delta);
+        // graphMax = Math.max(graphMax, delta);
       }
     }
   }
@@ -104,7 +136,7 @@
    * @param {number} frameEnd
    */
   function drawZoomed(frameIndex, frameStart, frameEnd) {
-    let boneData = data.find((d) => d.name === bone);
+    let boneData = scene.data.find((d) => d.name === bone);
     // Draw the zoomed in portion of the timeline
     ctx.fillStyle = "black";
 
@@ -154,12 +186,16 @@
       );
     }
 
+    if (scene?.eventMap) {
+      drawEvents(scene.eventMap[bone], frameStart, frameEnd);
+    }
+
     let frameIndexPixels =
       (frameIndex - frameStart) *
       (canvasElement.width / (frameEnd - frameStart));
 
     // Draw frame index
-    ctx.strokeStyle = "blue";
+    ctx.strokeStyle = "#f9423f";
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(frameIndexPixels, 0);
@@ -174,6 +210,8 @@
    * @param {string} strokeStyle
    */
   function drawChannel(values, frameStart, frameEnd, min, max, strokeStyle) {
+    // min = Math.min(...values.slice(frameStart, frameEnd));
+    // max = Math.max(...values.slice(frameStart, frameEnd));
     ctx.strokeStyle = strokeStyle;
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -189,6 +227,24 @@
       }
     }
     ctx.stroke();
+  }
+
+  function drawEvents(events, plotStartFrame, plotEndFrame) {
+    ctx.fillStyle = "#fff";
+    ctx.globalAlpha = 0.3;
+    for (let [startFrame, endFrame] of events) {
+      if (endFrame < plotStartFrame || startFrame > plotEndFrame) continue;
+      let frameStart = Math.max(startFrame, plotStartFrame);
+      let frameEnd = Math.min(endFrame, plotEndFrame);
+      let xStart =
+        ((frameStart - plotStartFrame) * canvasElement.width) /
+        (plotEndFrame - plotStartFrame);
+      let xEnd =
+        ((frameEnd - plotStartFrame) * canvasElement.width) /
+        (plotEndFrame - plotStartFrame);
+      ctx.fillRect(xStart, 0, xEnd - xStart, canvasElement.height);
+    }
+    ctx.globalAlpha = 1;
   }
 
   /**
@@ -211,6 +267,13 @@
   }
 
   /**
+   * @param {number} time
+   */
+  function padTime(time) {
+    return time < 10 ? `0${time}` : time;
+  }
+
+  /**
    * @param {{ offsetX: number; }} e
    */
   function showTooltip(e) {
@@ -219,7 +282,7 @@
     let frameWidth = windowWidth / 1000;
     let frame = Math.floor($frameStart + (windowWidth * e.offsetX) / 1000);
 
-    let boneData = data.find((d) => d.name === bone);
+    let boneData = scene.data.find((d) => d.name === bone);
     let frameData = boneData.frames[frame];
     let prevFrameData = boneData.frames[frame - 1];
 
@@ -235,8 +298,15 @@
       prevXValue * prevXValue +
       prevYValue * prevYValue +
       prevZValue * prevZValue;
-    let rateOfChange = magnitude - prevMagnitude;
+    let rateOfChange = scene.rosMap[bone][frame];
 
+    let offsetFrame = frame + scene.mocapFrameOffset;
+    let frameHours = padTime(Math.floor(offsetFrame / 30 / 60 / 60) + 1); // + 1 to be compatible with the Davinci Resolve timecode
+    let frameMinutes = padTime(Math.floor((offsetFrame / 30 / 60) % 60));
+    let frameSeconds = padTime(Math.floor((offsetFrame / 30) % 60));
+    let frameFrame = padTime(Math.floor(offsetFrame % 30));
+
+    tooltipTime = `${frameHours}:${frameMinutes}:${frameSeconds}:${frameFrame}`;
     tooltipFrame = frame;
     tooltipXYZ = `X ${xValue.toFixed(2)} Y ${yValue.toFixed(
       2
@@ -247,7 +317,8 @@
     )}`;
 
     tooltipX = e.offsetX;
-    frameIndex.set(frame);
+    // frameUpdateTriggeredByUser.set(true);
+    // frameIndex.set(frame);
   }
 
   /**
@@ -278,13 +349,9 @@
     class:visible={tooltipVisible}
     style={`left: ${tooltipX}px`}
   >
-    <span class="tooltip__frame">{tooltipFrame}</span>
+    <span class="tooltip__frame">{tooltipTime} {tooltipFrame}</span>
     <span class="tooltip__value">{tooltipXYZ}</span>
     <span class="tooltip__value">{tooltipMagnitude}</span>
-  </div>
-  <div class="times">
-    <div class="time">{Math.floor($frameStart)}</div>
-    <div class="time">{Math.floor($frameEnd)}</div>
   </div>
 </div>
 
@@ -300,12 +367,6 @@
     padding: 0;
     color: #ccc;
     font-size: 11px;
-  }
-
-  div.times {
-    width: 100%;
-    display: flex;
-    justify-content: space-between;
   }
 
   .tooltip {
@@ -324,6 +385,7 @@
     transition: opacity 0.2s;
     box-shadow: 0 0 5px rgba(0, 0, 0, 0.5);
     transform: translateX(-50%);
+    z-index: 9999;
   }
 
   .tooltip__value {
