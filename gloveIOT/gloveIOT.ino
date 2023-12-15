@@ -8,20 +8,21 @@ const char* ssid_list[] = {"HANDS", "CS-IoT", "WiFi-2.4-CAB0"};
 const char* password_list[] = {"95203737", "SLA-JD1PDcs!", "wr43kdnz2a7xm"};
 const int num_networks = 3;
 
-const char* mqttServer = "lieme.cloud.shiftr.io";
+const char* mqttServer = "algorithmicgaze.cloud.shiftr.io";
 const int mqttPort = 1883;
-const char* mqttUser = "lieme";
-const char* mqttPassword = "x7iNJWfycxrdEz51";
+const char* mqttUser = "algorithmicgaze";
+const char* mqttPassword = "oyxIrENHt8mM2ONQ";
 
 WiFiClient espKlant;
 PubSubClient client(espKlant);
-
+int ledConnection = 23;
 
 int pins[] = {2, 4, 16, 17, 19, 12, 14, 27, 26, 25};
 int numPins = 10;
 
 void setup() {
   Serial.begin(115200);
+  pinMode(ledConnection, OUTPUT); 
   for (int i = 0; i < numPins; i++) {
     pinMode(pins[i], OUTPUT);
   }
@@ -49,10 +50,12 @@ void setup() {
       Serial.println("WiFi connected");
       Serial.println("IP address: ");
       Serial.println(WiFi.localIP());
+      digitalWrite(ledConnection, HIGH);
       break; // exit
     } else {
       Serial.println("");
       Serial.println("Connection failed");
+      digitalWrite(ledConnection, LOW);
     }
   }
 
