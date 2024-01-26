@@ -4,24 +4,25 @@
 #define MIN(a,b) (((a)<(b))?(a):(b))
 
 // todo: add ine home - router 
-const char* ssid_list[] = {"CS-IoT", "WiFi-2.4-CAB0"};
-const char* password_list[] = {"SLA-JD1PDcs!", "wr43kdnz2a7xm"};
-const int num_networks = 2;
+const char* ssid_list[] = {"HANDS", "CS-IoT", "WiFi-2.4-CAB0"};
+const char* password_list[] = {"95203737", "SLA-JD1PDcs!", "wr43kdnz2a7xm"};
+const int num_networks = 3;
 
-const char* mqttServer = "lieme.cloud.shiftr.io";
+const char* mqttServer = "algorithmicgaze.cloud.shiftr.io";
 const int mqttPort = 1883;
-const char* mqttUser = "lieme";
-const char* mqttPassword = "x7iNJWfycxrdEz51";
+const char* mqttUser = "algorithmicgaze";
+const char* mqttPassword = "oyxIrENHt8mM2ONQ";
 
 WiFiClient espKlant;
 PubSubClient client(espKlant);
+int ledConnection = 23;
 
-// info: rechterhand duim niet - linkerhand wel
-// todo: define which pin is which finger!
-int pins[] = {2, 4, 16, 17, 12, 14, 27, 26, 25};
-int numPins = 9;
+int pins[] = {2, 4, 16, 17, 19, 12, 14, 27, 26, 25};
+int numPins = 10;
 
 void setup() {
+  Serial.begin(115200);
+  pinMode(ledConnection, OUTPUT); 
   for (int i = 0; i < numPins; i++) {
     pinMode(pins[i], OUTPUT);
   }
@@ -49,10 +50,12 @@ void setup() {
       Serial.println("WiFi connected");
       Serial.println("IP address: ");
       Serial.println(WiFi.localIP());
+      digitalWrite(ledConnection, HIGH);
       break; // exit
     } else {
       Serial.println("");
       Serial.println("Connection failed");
+      digitalWrite(ledConnection, LOW);
     }
   }
 
@@ -96,17 +99,17 @@ void onMessage(const char* topic, byte* payload, unsigned int length) {
   Serial.println(buffer);
   //Serial.println(message);
 
-  if (message[0] == '1') {
-    digitalWrite(pins[0], HIGH);
+int messageLength = strlen(message);
+Serial.print("incoming: ");
+Serial.println(messageLength);
+Serial.print("message length");
+Serial.println(length);
+for (int i = 0; i < length; i++) {
+  if (message[i] == '1') {
+    digitalWrite(pins[i], HIGH);
   } else {
-    digitalWrite(pins[0], LOW);
+    digitalWrite(pins[i], LOW);   
   }
-
-  if (message[1] == '1') {
-    digitalWrite(pins[1], HIGH);
-  } else {
-    digitalWrite(pins[1], LOW);
-  }
-  // more to follow when i know the pin-finger relation
+}
 
 }

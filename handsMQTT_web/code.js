@@ -1,8 +1,9 @@
 ///*
+
 const client = mqtt.connect(
-  "wss://lieme:x7iNJWfycxrdEz51@lieme.cloud.shiftr.io",
+  "wss://algorithmicgaze:oyxIrENHt8mM2ONQ@algorithmicgaze.cloud.shiftr.io",
   {
-    clientId: "hands_data_web",
+    clientId: "hands_data_web_local",
   }
 );
 
