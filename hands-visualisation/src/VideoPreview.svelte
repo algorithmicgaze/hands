@@ -7,12 +7,10 @@
     isPlaying,
   } from "./stores";
   import { onMount } from "svelte";
-  import { mocapFrameToVideoTime } from "./math";
+  import { mocapFrameToVideoTime, videoTimeToMocapFrame } from "./math";
   let videoElement;
   export let src = "";
   export let mocapFrameOffset = 0;
-  export let videoFps = 25;
-  export let mocapFps = 30;
   let prevPlaying = undefined;
 
   $: {
@@ -38,18 +36,18 @@
   }
 
   onMount(() => {
-    videoElement.addEventListener("timeupdate", () => {
-      frameUpdateTriggeredByUser.set(false);
-      frameIndex.set(
-        Math.floor(
-          (videoElement.currentTime - mocapFrameOffset / videoFps) * mocapFps
-        )
-      );
-    });
-    // ctx = canvasElement.getContext("2d");
-    // cacheGraphData("xyz");
-    // draw($frameIndex, $frameStart, $frameEnd);
+    window.requestAnimationFrame(updateTime);
   });
+
+  function updateTime() {
+    // if ($isPlaying) {
+    frameUpdateTriggeredByUser.set(false);
+
+    frameIndex.set(
+      videoTimeToMocapFrame(videoElement.currentTime, mocapFrameOffset)
+    );
+    requestAnimationFrame(updateTime);
+  }
 </script>
 
 <div class="wrapper">

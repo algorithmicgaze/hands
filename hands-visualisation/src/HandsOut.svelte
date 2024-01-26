@@ -32,9 +32,9 @@
       handPattern[1] = boneTrigger("LeftFinger4Proximal");
       handPattern[2] = boneTrigger("LeftFinger3Proximal");
       handPattern[3] = boneTrigger("LeftFinger2Proximal");
-      handPattern[4] = 0; // boneTrigger("LeftFinger1Proximal");
+      handPattern[4] = false; // boneTrigger("LeftFinger1Proximal");
 
-      handPattern[5] = 0; // boneTrigger("RightFinger1Proximal");
+      handPattern[5] = false; // boneTrigger("RightFinger1Proximal");
       handPattern[6] = boneTrigger("RightFinger2Proximal");
       handPattern[7] = boneTrigger("RightFinger3Proximal");
       handPattern[8] = boneTrigger("RightFinger4Proximal");
@@ -57,9 +57,9 @@
     const events = scene.eventMap[bone];
     const thisFrameIsInEvent = frameIsInEvent(events, $frameIndex);
     if (thisFrameIsInEvent) {
-      return 1;
+      return true;
     } else {
-      return 0;
+      return false;
     }
   }
 
