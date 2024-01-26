@@ -1,3 +1,35 @@
+const trackedBones = [
+  "hip",
+  "leftFoot",
+  "rightFoot",
+  "leftShoulder",
+  "rightShoulder",
+  "leftUpperArm",
+  "rightUpperArm",
+  "leftLowerArm",
+  "rightLowerArm",
+  "leftShoulder",
+  "rightShoulder",
+  "leftThumbTip",
+  "leftIndexTip",
+  "leftMiddleTip",
+  "leftRingTip",
+  "leftLittleTip",
+  "rightThumbTip",
+  "rightIndexTip",
+  "rightMiddleTip",
+  "rightRingTip",
+  "rightLittleTip",
+];
+
+// const colorMap = {
+//   "leftFoot": 0x333333,
+//   "rightFoot": 0x333333,
+
+// }
+
+const boneMeshMap = new Map();
+
 function addCubeToMesh(bone, mesh) {
   dummy.scale.set(1, 1, 1);
   dummy.position.x = bone.position.x * 3;
@@ -16,7 +48,15 @@ function addCubeToMesh(bone, mesh) {
   mesh.instanceMatrix.needsUpdate = true;
 }
 
-function createBoneMesh(color) {
+function createBoneMesh(boneName) {
+  let color = 0x333333;
+  if (boneName.includes("left")) {
+    color = "yellow";
+  } else if (boneName.includes("right")) {
+    color = "green";
+  }
+  // const color = 0xffffff;
+  // console.log(boneName, color);
   const material = new THREE.MeshBasicMaterial({ color: color });
   const mesh = new THREE.InstancedMesh(geometry, material, TRAIL_SIZE);
   mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -43,10 +83,14 @@ ws.onmessage = (event) => {
   if (message.type === "position") {
     // console.log(message.hip);
     // Update the cube position
-    addCubeToMesh(message.hip, hipCubes);
-    addCubeToMesh(message.spine, spineCubes);
-    addCubeToMesh(message.chest, chestCubes);
-    addCubeToMesh(message.neck, neckCubes);
+    for (const boneName of trackedBones) {
+      const mesh = boneMeshMap.get(boneName);
+      const boneData = message[boneName];
+      if (!mesh || !boneData) {
+        debugger;
+      }
+      addCubeToMesh(boneData, mesh);
+    }
   }
 };
 
@@ -71,27 +115,20 @@ dummy.scale.set(0, 0, 0);
 dummy.updateMatrix();
 
 // Create a cube
-const geometry = new THREE.BoxGeometry(0.1, 0.1, 0.1);
+const geometry = new THREE.BoxGeometry(0.01, 0.01, 0.01);
 
-const hipCubes = createBoneMesh(0x00ff00);
-const spineCubes = createBoneMesh(0xffff00);
-const chestCubes = createBoneMesh(0xffffff);
-const neckCubes = createBoneMesh(0x0000ff);
+for (const boneName of trackedBones) {
+  const mesh = createBoneMesh(boneName);
+  boneMeshMap.set(boneName, mesh);
+  scene.add(mesh);
+}
 
-// for (let i = 0; i < TRAIL_SIZE; i++) {
-//   hipCubes.setMatrixAt(i, dummy.matrix);
-//   spineCubes.setMatrixAt(i, dummy.matrix);
-//   chestCubes.setMatrixAt(i, dummy.matrix);
-// }
-// hipCubes.instanceMatrix.needsUpdate = true;
-// chestCubes.instanceMatrix.needsUpdate = true;
-scene.add(hipCubes);
-scene.add(spineCubes);
-scene.add(chestCubes);
-scene.add(neckCubes);
-
-camera.position.z = 5;
-camera.position.y = 3;
+// const hipCubes = createBoneMesh(0x00ff00); scene.add(hipCubes);
+// const leftFootCubes = createBoneMesh(0xff0000); scene.add(leftFootCubes);
+// const rightFootCubes = createBoneMesh(0x0000ff); scene.add(rightFootCubes);
+// const leftShoulderCubes = createBoneMesh(0xff6666); scene.add(leftShoulderCubes);
+// const rightShoulderCubes = createBoneMesh(0x6666ff); scene.add(rightShoulderCubes);
+// const rightShoulderCubes = createBoneMesh(0x6666ff); scene.add(rightShoulderCubes);
 
 // add a grid helper
 const gridHelper = new THREE.GridHelper(10, 10);
@@ -99,6 +136,11 @@ scene.add(gridHelper);
 // Add OrbitControls
 const controls = new THREE.OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
+
+camera.position.z = 2;
+camera.position.y = 3;
+controls.target.set(0, 3, 0);
+
 // Render loop
 const animate = function () {
   requestAnimationFrame(animate);
@@ -107,4 +149,15 @@ const animate = function () {
   // cube.rotation.y += 0.01;
   renderer.render(scene, camera);
 };
+
+function onWindowResize() {
+  // Update camera aspect ratio and renderer size
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+// Add the event listener
+window.addEventListener("resize", onWindowResize, false);
+
 animate();

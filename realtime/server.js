@@ -41,13 +41,17 @@ server.on("message", (data, rinfo) => {
   // var uncompressedSize = LZ4.decodeBlock(data, decodedBlock);
   // console.log("size", uncompressedSize);
   const blockString = decodedBlock.toString("utf-8");
-  if (first) {
-    console.log(blockString);
-    first = false;
-  }
   // uncompressed = uncompressed.slice(0, uncompressedSize)
 
   const jsonData = JSON.parse(blockString);
+  console.log(jsonData.scene.actors[0].body.hip.position);
+
+  // if (first) {
+  //   // console.log(blockString);
+  //   console.log(Object.keys(jsonData.scene.actors[0].body));
+  //   first = false;
+  // }
+
   // fs.writeFileSync("data.json", data);
   // console.log(
   //   JSON.stringify({
@@ -62,10 +66,7 @@ server.on("message", (data, rinfo) => {
     ws.send(
       JSON.stringify({
         type: "position",
-        hip: jsonData.scene.actors[0].body.hip,
-        spine: jsonData.scene.actors[0].body.spine,
-        chest: jsonData.scene.actors[0].body.chest,
-        neck: jsonData.scene.actors[0].body.neck,
+        ...jsonData.scene.actors[0].body,
       }),
     );
   });
