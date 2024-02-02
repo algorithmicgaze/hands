@@ -20,10 +20,17 @@
 </head>
 
 <body>
+    <script type="importmap">
+        {
+          "imports": {
+            "three": "./third_party/three-0.161.0/build/three.module.js",
+            "three/addons/": "./third_party/three-0.161.0/addons/"
+          }
+        }
+      </script>
 
-    <script src="three.min.js"></script>
-    <script src="OrbitControls.js"></script>
-    <script src="render.js"></script>
+    <script type="module" src="render_relative.js"></script>
+
 </body>
 
 </html>
