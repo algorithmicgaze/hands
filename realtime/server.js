@@ -152,8 +152,8 @@ async function replayChunk(reader, chunkIndex) {
     });
 
     // Wait for the next tick
-    // await new Promise((resolve) => setTimeout(resolve, 1000 / 30));
-    await new Promise((resolve) => setTimeout(resolve, 1));
+    await new Promise((resolve) => setTimeout(resolve, 1000 / 30));
+    // await new Promise((resolve) => setTimeout(resolve, 1));
 
     // Check if it's time to load a new chunk
     if (i === chunk.length - 1) {
