@@ -172,7 +172,7 @@ scene.add(gridHelper);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 
-camera.position.z = 1;
+camera.position.z = 4;
 camera.position.y = 2;
 controls.target.set(0, 2, 0);
 
