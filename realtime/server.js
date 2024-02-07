@@ -138,8 +138,8 @@ async function replayMocapData(mocapData) {
       });
 
       // Wait for the next tick
-      //   await new Promise((resolve) => setTimeout(resolve, 1000 / 30));
-      await new Promise((resolve) => setTimeout(resolve, 1));
+      await new Promise((resolve) => setTimeout(resolve, 1000 / 30));
+      //   await new Promise((resolve) => setTimeout(resolve, 1));
     }
     console.log(`Replay finished, restarting`);
   } while (true);
