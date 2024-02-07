@@ -1,0 +1,94 @@
+syntax = "proto3";
+
+message Position {
+  float x = 1;
+  float y = 2;
+  float z = 3;
+}
+
+message Rotation {
+  float x = 1;
+  float y = 2;
+  float z = 3;
+  float w = 4;
+}
+
+message Bone {
+  Position position = 1;
+  Rotation rotation = 2;
+}
+
+message Body {
+  Bone hip = 1;
+  Bone spine = 2;
+  Bone chest = 3;
+  Bone neck = 4;
+  Bone head = 5;
+  Bone leftShoulder = 6;
+  Bone leftUpperArm = 7;
+  Bone leftLowerArm = 8;
+  Bone leftHand = 9;
+  Bone rightShoulder = 10;
+  Bone rightUpperArm = 11;
+  Bone rightLowerArm = 12;
+  Bone rightHand = 13;
+  Bone leftUpLeg = 14;
+  Bone leftLeg = 15;
+  Bone leftFoot = 16;
+  Bone leftToe = 17;
+  Bone leftToeEnd = 18;
+  Bone rightUpLeg = 19;
+  Bone rightLeg = 20;
+  Bone rightFoot = 21;
+  Bone rightToe = 22;
+  Bone rightToeEnd = 23;
+  Bone leftThumbProximal = 24;
+  Bone leftThumbMedial = 25;
+  Bone leftThumbDistal = 26;
+  Bone leftThumbTip = 27;
+  Bone leftIndexProximal = 28;
+  Bone leftIndexMedial = 29;
+  Bone leftIndexDistal = 30;
+  Bone leftIndexTip = 31;
+  Bone leftMiddleProximal = 32;
+  Bone leftMiddleMedial = 33;
+  Bone leftMiddleDistal = 34;
+  Bone leftMiddleTip = 35;
+  Bone leftRingProximal = 36;
+  Bone leftRingMedial = 37;
+  Bone leftRingDistal = 38;
+  Bone leftRingTip = 39;
+  Bone leftLittleProximal = 40;
+  Bone leftLittleMedial = 41;
+  Bone leftLittleDistal = 42;
+  Bone leftLittleTip = 43;
+  Bone rightThumbProximal = 44;
+  Bone rightThumbMedial = 45;
+  Bone rightThumbDistal = 46;
+  Bone rightThumbTip = 47;
+  Bone rightIndexProximal = 48;
+  Bone rightIndexMedial = 49;
+  Bone rightIndexDistal = 50;
+  Bone rightIndexTip = 51;
+  Bone rightMiddleProximal = 52;
+  Bone rightMiddleMedial = 53;
+  Bone rightMiddleDistal = 54;
+  Bone rightMiddleTip = 55;
+  Bone rightRingProximal = 56;
+  Bone rightRingMedial = 57;
+  Bone rightRingDistal = 58;
+  Bone rightRingTip = 59;
+  Bone rightLittleProximal = 60;
+  Bone rightLittleMedial = 61;
+  Bone rightLittleDistal = 62;
+  Bone rightLittleTip = 63;
+}
+
+message Frame {
+  float timestamp = 1;
+  Body body = 2;
+}
+
+message MocapData {
+  repeated Frame frames = 1;
+}

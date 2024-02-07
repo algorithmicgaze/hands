@@ -4,9 +4,10 @@ const dgram = require("node:dgram");
 const WebSocket = require("ws");
 const fs = require("fs");
 const LZ4 = require("lz4");
+const protobuf = require("protobufjs");
 
-class LogReader {
-  constructor(filename) {
+class MocapReader {
+  constructor(filename, MocapData) {
     this.filename = filename;
     this.lineOffsets = [];
     this.lineCount = 0;
@@ -121,53 +122,36 @@ function startUDPListener(port, logFile) {
   server.bind(port);
 }
 
-async function replayChunk(reader, chunkIndex) {
-  console.log(`Replaying chunk ${chunkIndex}`);
-  let chunk;
-  try {
-    chunk = await reader.getChunk(chunkIndex, 10000);
-    // If the chunk is empty, it means there are no more chunks. Reset to start.
-    if (chunk.length === 0) throw new Error("No more chunks");
-  } catch (e) {
-    console.log("Reached the end of the file. Starting over.");
-    return replayChunk(reader, 0); // Reset to the first chunk
-  }
+async function replayMocapData(mocapData) {
+  console.log(`Replaying mocap data...`);
+  do {
+    for (let i = 0; i < mocapData.frames.length; i++) {
+      const frame = mocapData.frames[i];
+      connections.forEach((ws) => {
+        ws.send(
+          JSON.stringify({
+            type: "position",
+            timestamp: frame.timestamp,
+            ...frame.body,
+          })
+        );
+      });
 
-  for (let i = 0; i < chunk.length; i++) {
-    let jsonData;
-    try {
-      jsonData = JSON.parse(chunk[i]);
-    } catch (e) {
-      console.error("Error parsing JSON:", e);
-      continue; // Skip this iteration if JSON parsing fails
+      // Wait for the next tick
+      //   await new Promise((resolve) => setTimeout(resolve, 1000 / 30));
+      await new Promise((resolve) => setTimeout(resolve, 1));
     }
-    // console.log(jsonData.scene.actors[0].body.hip.position);
-    connections.forEach((ws) => {
-      ws.send(
-        JSON.stringify({
-          type: "position",
-          ...jsonData.scene.actors[0].body,
-        })
-      );
-    });
-
-    // Wait for the next tick
-    await new Promise((resolve) => setTimeout(resolve, 1000 / 30));
-    // await new Promise((resolve) => setTimeout(resolve, 1));
-
-    // Check if it's time to load a new chunk
-    if (i === chunk.length - 1) {
-      return replayChunk(reader, chunkIndex + 1); // Recursively load the next chunk
-    }
-  }
+    console.log(`Replay finished, restarting`);
+  } while (true);
 }
 
 async function startReplay(filename) {
-  const reader = new LogReader(filename);
-  console.log(`Loading replay file...`);
-  await reader.prepare();
-  console.log(`Starting replay.`);
-  await replayChunk(reader, 0);
+  const root = await protobuf.load("mocap.proto");
+  const MocapData = root.lookupType("MocapData");
+  console.log(`Loading ${filename}...`);
+  const buffer = fs.readFileSync(filename);
+  const mocapData = MocapData.decode(buffer);
+  await replayMocapData(mocapData);
 }
 
 const pad = (d) => (String(d).length < 2 ? `0${d}` : d);
