@@ -1,25 +1,72 @@
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+const TRAIL_SIZE = 50000;
+
 const trackedBones = [
   "hip",
-  "leftFoot",
-  "rightFoot",
+  "spine",
+  "chest",
+  "neck",
+  "head",
   "leftShoulder",
-  "rightShoulder",
   "leftUpperArm",
-  "rightUpperArm",
   "leftLowerArm",
-  "rightLowerArm",
-  "leftShoulder",
+  "leftHand",
   "rightShoulder",
-  "leftThumbTip",
-  "leftIndexTip",
-  "leftMiddleTip",
-  "leftRingTip",
-  "leftLittleTip",
-  "rightThumbTip",
-  "rightIndexTip",
-  "rightMiddleTip",
-  "rightRingTip",
-  "rightLittleTip",
+  "rightUpperArm",
+  "rightLowerArm",
+  "rightHand",
+  "leftUpLeg",
+  "leftLeg",
+  "leftFoot",
+  "leftToe",
+  "leftToeEnd",
+  "rightUpLeg",
+  "rightLeg",
+  "rightFoot",
+  "rightToe",
+  "rightToeEnd",
+  //   "leftThumbProximal",
+  //   "leftThumbMedial",
+  //   "leftThumbDistal",
+  //   "leftThumbTip",
+  //   "leftIndexProximal",
+  //   "leftIndexMedial",
+  //   "leftIndexDistal",
+  //   "leftIndexTip",
+  //   "leftMiddleProximal",
+  //   "leftMiddleMedial",
+  //   "leftMiddleDistal",
+  //   "leftMiddleTip",
+  //   "leftRingProximal",
+  //   "leftRingMedial",
+  //   "leftRingDistal",
+  //   "leftRingTip",
+  //   "leftLittleProximal",
+  //   "leftLittleMedial",
+  //   "leftLittleDistal",
+  //   "leftLittleTip",
+  //   "rightThumbProximal",
+  //   "rightThumbMedial",
+  //   "rightThumbDistal",
+  //   "rightThumbTip",
+  //   "rightIndexProximal",
+  //   "rightIndexMedial",
+  //   "rightIndexDistal",
+  //   "rightIndexTip",
+  //   "rightMiddleProximal",
+  //   "rightMiddleMedial",
+  //   "rightMiddleDistal",
+  //   "rightMiddleTip",
+  //   "rightRingProximal",
+  //   "rightRingMedial",
+  //   "rightRingDistal",
+  //   "rightRingTip",
+  //   "rightLittleProximal",
+  //   "rightLittleMedial",
+  //   "rightLittleDistal",
+  //   "rightLittleTip",
 ];
 
 // const colorMap = {
@@ -28,9 +75,12 @@ const trackedBones = [
 
 // }
 
+let leftHandPosition = new THREE.Vector3();
+let rightHandPosition = new THREE.Vector3();
+
 const boneMeshMap = new Map();
 
-function addCubeToMesh(bone, mesh) {
+function addCubeToMesh(boneName, bone, mesh) {
   dummy.scale.set(1, 1, 1);
   dummy.position.x = bone.position.x * 3;
   dummy.position.y = bone.position.y * 3;
@@ -39,7 +89,7 @@ function addCubeToMesh(bone, mesh) {
     bone.rotation.x,
     bone.rotation.y,
     bone.rotation.z,
-    bone.rotation.w,
+    bone.rotation.w
   );
   dummy.updateMatrix();
 
@@ -49,15 +99,8 @@ function addCubeToMesh(bone, mesh) {
 }
 
 function createBoneMesh(boneName) {
-  let color = 0x333333;
-  if (boneName.includes("left")) {
-    color = "yellow";
-  } else if (boneName.includes("right")) {
-    color = "green";
-  }
-  // const color = 0xffffff;
-  // console.log(boneName, color);
-  const material = new THREE.MeshBasicMaterial({ color: color });
+  let color = "pink";
+  const material = new THREE.MeshBasicMaterial({ color });
   const mesh = new THREE.InstancedMesh(geometry, material, TRAIL_SIZE);
   mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   mesh.index = 0;
@@ -73,28 +116,56 @@ function createBoneMesh(boneName) {
   return mesh;
 }
 
-const ws = new WebSocket("ws://localhost:8080");
-ws.onopen = () => {
-  console.log("connected");
-};
-ws.onmessage = (event) => {
-  // console.log(event.data);
-  const message = JSON.parse(event.data);
-  if (message.type === "position") {
-    // console.log(message.hip);
-    // Update the cube position
-    for (const boneName of trackedBones) {
-      const mesh = boneMeshMap.get(boneName);
-      const boneData = message[boneName];
-      if (!mesh || !boneData) {
-        debugger;
-      }
-      addCubeToMesh(boneData, mesh);
-    }
-  }
-};
+function setupWebSocket() {
+  const ws = new WebSocket("ws://localhost:8080");
+  let retries = 0;
+  const maxRetries = 10;
+  const maxDelay = 10000;
 
-const TRAIL_SIZE = 50_000;
+  ws.onopen = () => {
+    console.log("connected");
+  };
+
+  ws.onmessage = (event) => {
+    const message = JSON.parse(event.data);
+
+    if (message.type === "position") {
+      // Update the cube position
+      for (const boneName of trackedBones) {
+        const mesh = boneMeshMap.get(boneName);
+        const boneData = message[boneName];
+        if (!mesh || !boneData) {
+          debugger;
+        }
+        addCubeToMesh(boneName, boneData, mesh);
+      }
+    }
+  };
+
+  ws.onclose = (e) => {
+    console.log("WebSocket closed. Attempting to reconnect...", e.reason);
+    retries++;
+    if (retries <= maxRetries) {
+      // Exponential backoff formula to calculate the delay before the next retry
+      let delay = Math.min(maxDelay, Math.pow(2, retries) * 100);
+      setTimeout(setupWebSocket, delay);
+    } else {
+      console.log("Maximum retries reached. Giving up.");
+    }
+  };
+
+  ws.onerror = (err) => {
+    console.error(
+      "WebSocket encountered error: ",
+      err.message,
+      "Closing socket"
+    );
+    ws.close();
+  };
+}
+
+setupWebSocket();
+
 // Treat the trail as a circular buffer
 // let trailIndex = 0;
 
@@ -104,7 +175,7 @@ const camera = new THREE.PerspectiveCamera(
   75,
   window.innerWidth / window.innerHeight,
   0.1,
-  1000,
+  1000
 );
 const renderer = new THREE.WebGLRenderer();
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -115,7 +186,7 @@ dummy.scale.set(0, 0, 0);
 dummy.updateMatrix();
 
 // Create a cube
-const geometry = new THREE.BoxGeometry(0.01, 0.01, 0.01);
+const geometry = new THREE.BoxGeometry(0.003, 0.003, 0.003);
 
 for (const boneName of trackedBones) {
   const mesh = createBoneMesh(boneName);
@@ -131,22 +202,20 @@ for (const boneName of trackedBones) {
 // const rightShoulderCubes = createBoneMesh(0x6666ff); scene.add(rightShoulderCubes);
 
 // add a grid helper
-const gridHelper = new THREE.GridHelper(10, 10);
+const gridHelper = new THREE.GridHelper(10, 10, 0x222222, 0x333333);
 scene.add(gridHelper);
 // Add OrbitControls
-const controls = new THREE.OrbitControls(camera, renderer.domElement);
+const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 
-camera.position.z = 2;
-camera.position.y = 3;
-controls.target.set(0, 3, 0);
+camera.position.z = 4;
+camera.position.y = 2;
+controls.target.set(0, 2, 0);
 
 // Render loop
 const animate = function () {
   requestAnimationFrame(animate);
   controls.update();
-  // cube.rotation.x += 0.01;
-  // cube.rotation.y += 0.01;
   renderer.render(scene, camera);
 };
 
@@ -157,7 +226,40 @@ function onWindowResize() {
   renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
+const link = document.createElement("a");
+link.style.display = "none";
+document.body.appendChild(link); // Firefox workaround, see #6594
+
+function save(blob, filename) {
+  link.href = URL.createObjectURL(blob);
+  link.download = filename;
+  link.click();
+
+  // URL.revokeObjectURL( url ); breaks Firefox...
+}
+
+function saveString(text, filename) {
+  save(new Blob([text], { type: "text/plain" }), filename);
+}
+
+function onKeyDown(e) {
+  if (e.key === "e") {
+    const gltfExporter = new GLTFExporter();
+    const options = {};
+    gltfExporter.parse(
+      scene,
+      (gltf) => {
+        console.log(gltf);
+        const output = JSON.stringify(gltf, null, 2);
+        saveString(output, "out.gltf");
+      },
+      options
+    );
+  }
+}
+
 // Add the event listener
 window.addEventListener("resize", onWindowResize, false);
+window.addEventListener("keydown", onKeyDown);
 
 animate();
