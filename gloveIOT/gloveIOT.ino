@@ -5,7 +5,7 @@
 
 // todo: add ine home - router 
 const char* ssid_list[] = {"HANDS", "CS-IoT", "WiFi-2.4-CAB0"};
-const char* password_list[] = {"95203737", "SLA-JD1PDcs!", "wr43kdnz2a7xm"};
+const char* password_list[] = {"95203737", "SLA-qkXvjcs!", "wr43kdnz2a7xm"};
 const int num_networks = 3;
 
 const char* mqttServer = "algorithmicgaze.cloud.shiftr.io";
