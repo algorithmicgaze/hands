@@ -74,6 +74,30 @@ function createBoneMesh(boneName) {
   return mesh;
 }
 
+const prevBoneValuesMap = new Map();
+
+function boneToBit(message, boneName) {
+  const bone = message[boneName];
+  //const { w, x, y, z } = bone.rotation;
+  const { x, y, z } = bone.position;
+  //   const mag = Math.sqrt(w * w + x * x + y * y + z * z);
+  const mag = Math.sqrt(x * x + y * y + z * z);
+  const prevMag = prevBoneValuesMap.get(boneName) || 0;
+  prevBoneValuesMap.set(boneName, mag);
+  //   if (boneName === "leftIndexTip") {
+  //     console.log(
+  //       mag.toFixed(5),
+  //       prevMag.toFixed(5),
+  //       Math.abs(mag - prevMag).toFixed(5)
+  //     );
+  //   }
+  if (Math.abs(mag - prevMag) > 0.1) {
+    return true;
+  } else {
+    return false;
+  }
+}
+
 function setupWebSocket() {
   const ws = new WebSocket("ws://localhost:8080");
   let retries = 0;
@@ -103,6 +127,19 @@ function setupWebSocket() {
         }
         addCubeToMesh(boneName, boneData, mesh);
       }
+
+      mqttOut.sendPattern([
+        boneToBit(message, "leftLittleTip"),
+        boneToBit(message, "leftRingTip"),
+        boneToBit(message, "leftMiddleTip"),
+        boneToBit(message, "leftIndexTip"),
+        boneToBit(message, "leftThumbTip"),
+        boneToBit(message, "rightThumbTip"),
+        boneToBit(message, "rightIndexTip"),
+        boneToBit(message, "rightMiddleTip"),
+        boneToBit(message, "rightRingTip"),
+        boneToBit(message, "rightLittleTip"),
+      ]);
     }
   };
 
@@ -129,12 +166,14 @@ function setupWebSocket() {
 }
 
 setupWebSocket();
+const mqttOut = new MqttOut();
 
 // Treat the trail as a circular buffer
 // let trailIndex = 0;
 
 // Initialize THREE.js scene
 const scene = new THREE.Scene();
+window.scene = scene;
 const camera = new THREE.PerspectiveCamera(
   75,
   window.innerWidth / window.innerHeight,
@@ -221,24 +260,7 @@ function saveString(text, filename) {
   save(new Blob([text], { type: "text/plain" }), filename);
 }
 
-function onKeyDown(e) {
-  if (e.key === "e") {
-    const gltfExporter = new GLTFExporter();
-    const options = {};
-    gltfExporter.parse(
-      scene,
-      (gltf) => {
-        console.log(gltf);
-        const output = JSON.stringify(gltf, null, 2);
-        saveString(output, "out.gltf");
-      },
-      options
-    );
-  }
-}
-
 // Add the event listener
 window.addEventListener("resize", onWindowResize, false);
-window.addEventListener("keydown", onKeyDown);
 
 animate();

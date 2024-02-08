@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
-const TRAIL_SIZE = 50000;
+const TRAIL_SIZE = 2000;
 
 const trackedBones = [
   "hip",
@@ -102,6 +102,7 @@ function createBoneMesh(boneName) {
   let color = "pink";
   const material = new THREE.MeshBasicMaterial({ color });
   const mesh = new THREE.InstancedMesh(geometry, material, TRAIL_SIZE);
+  mesh.frustumCulled = false;
   mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   mesh.index = 0;
 
