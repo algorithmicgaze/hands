@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
-const TRAIL_SIZE = 50000;
+const TRAIL_SIZE = 3000;
 
 const trackedBones = [
   "leftHand",
@@ -80,10 +80,25 @@ function boneToBit(message, boneName) {
   const bone = message[boneName];
   //const { w, x, y, z } = bone.rotation;
   const { x, y, z } = bone.position;
+  const rootPos = boneName.startsWith("left")
+    ? leftHandPosition
+    : rightHandPosition;
   //   const mag = Math.sqrt(w * w + x * x + y * y + z * z);
-  const mag = Math.sqrt(x * x + y * y + z * z);
-  const prevMag = prevBoneValuesMap.get(boneName) || 0;
-  prevBoneValuesMap.set(boneName, mag);
+  const dx = x - rootPos.x;
+  const dy = y - rootPos.y;
+  const dz = z - rootPos.z;
+
+  const mag = Math.sqrt(dx * dx + dy * dy + dz * dz);
+  const prevMags = prevBoneValuesMap.get(boneName) || [];
+  const prevMag =
+    prevMags.length === 0
+      ? 0
+      : prevMags.reduce((sum, value) => sum + value, 0) / prevMags.length;
+  prevMags.push(mag);
+  if (prevMags.length > 5) {
+    prevMags.shift();
+  }
+  prevBoneValuesMap.set(boneName, prevMags);
   //   if (boneName === "leftIndexTip") {
   //     console.log(
   //       mag.toFixed(5),
@@ -91,7 +106,10 @@ function boneToBit(message, boneName) {
   //       Math.abs(mag - prevMag).toFixed(5)
   //     );
   //   }
-  if (Math.abs(mag - prevMag) > 0.1) {
+  const oboeSensitivity = 0.0003;
+  const normalSensitivity = 0.005;
+  const sensitivity = normalSensitivity;
+  if (Math.abs(mag - prevMag) > sensitivity) {
     return true;
   } else {
     return false;
@@ -189,7 +207,7 @@ dummy.scale.set(0, 0, 0);
 dummy.updateMatrix();
 
 // Create a cube
-const geometry = new THREE.BoxGeometry(0.0015, 0.0015, 0.0015);
+const geometry = new THREE.BoxGeometry(0.003, 0.003, 0.003);
 
 const leftHandGroup = new THREE.Group();
 const rightHandGroup = new THREE.Group();
