@@ -2,7 +2,8 @@ class MqttOut {
   constructor() {
     this.connected = false;
     this.client = mqtt.connect(
-      "wss://algorithmicgaze:a5U1U292uh62c8uh@algorithmicgaze.cloud.shiftr.io",
+      //"wss://algorithmicgaze:a5U1U292uh62c8uh@algorithmicgaze.cloud.shiftr.io",
+      "ws://localhost:9001/mqtt",
       {
         clientId: "hands-realtime",
       }

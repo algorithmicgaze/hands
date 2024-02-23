@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
-const TRAIL_SIZE = 3000;
+const TRAIL_SIZE = 5000;
 
 const trackedBones = [
   "leftHand",
@@ -28,11 +28,11 @@ let rightHandPosition = new THREE.Vector3();
 
 const boneMeshMap = new Map();
 
-function addCubeToMesh(boneName, bone, mesh) {
+function addCubeToMesh(boneName, bone, mesh, scale = 1) {
   const rootPos = boneName.startsWith("left")
     ? leftHandPosition
     : rightHandPosition;
-  dummy.scale.set(1, 1, 1);
+  dummy.scale.set(scale, scale, scale);
   dummy.position.x = (bone.position.x - rootPos.x) * 3;
   dummy.position.y = (bone.position.y - rootPos.y) * 3;
   dummy.position.z = (bone.position.z - rootPos.z) * 3;
@@ -95,7 +95,7 @@ function boneToBit(message, boneName) {
       ? 0
       : prevMags.reduce((sum, value) => sum + value, 0) / prevMags.length;
   prevMags.push(mag);
-  if (prevMags.length > 5) {
+  if (prevMags.length > 3) {
     prevMags.shift();
   }
   prevBoneValuesMap.set(boneName, prevMags);
@@ -106,10 +106,10 @@ function boneToBit(message, boneName) {
   //       Math.abs(mag - prevMag).toFixed(5)
   //     );
   //   }
-  const oboeSensitivity = 0.0003;
+  const oboeSensitivity = 0.001;
   const normalSensitivity = 0.005;
   const sensitivity = normalSensitivity;
-  if (Math.abs(mag - prevMag) > sensitivity) {
+  if (Math.abs(mag - prevMag) > oboeSensitivity) {
     return true;
   } else {
     return false;
@@ -140,10 +140,11 @@ function setupWebSocket() {
       for (const boneName of trackedBones) {
         const mesh = boneMeshMap.get(boneName);
         const boneData = message[boneName];
+        const bit = boneToBit(message, boneName);
         if (!mesh || !boneData) {
           debugger;
         }
-        addCubeToMesh(boneName, boneData, mesh);
+        addCubeToMesh(boneName, boneData, mesh, bit ? 1.0 : 0.2);
       }
 
       mqttOut.sendPattern([
@@ -248,8 +249,8 @@ controls.target.set(0, 2, 0);
 const animate = function () {
   requestAnimationFrame(animate);
   controls.update();
-  leftHandGroup.rotation.y -= 0.001;
-  rightHandGroup.rotation.y += 0.001;
+  //   leftHandGroup.rotation.y -= 0.001;
+  //   rightHandGroup.rotation.y += 0.001;
   // cube.rotation.x += 0.01;
   // cube.rotation.y += 0.01;
   renderer.render(scene, camera);
