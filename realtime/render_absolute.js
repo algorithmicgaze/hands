@@ -117,6 +117,47 @@ function createBoneMesh(boneName) {
   return mesh;
 }
 
+const prevBoneValuesMap = new Map();
+function boneToBit(message, boneName, update = true) {
+  // FIXME DOES NOT WOOOOORK BECAUSE IT HAS SIDE EFFECTS
+  const bone = message[boneName];
+  const { x, y, z } = bone.position;
+
+  const mag = Math.sqrt(x * x + y * y + z * z);
+  let prevMag = 0;
+  if (update) {
+    const prevMags = prevBoneValuesMap.get(boneName) || [];
+    prevMag =
+      prevMags.length === 0
+        ? 0
+        : prevMags.reduce((sum, value) => sum + value, 0) / prevMags.length;
+    prevMags.push(mag);
+    if (prevMags.length > 5) {
+      prevMags.shift();
+    }
+    prevBoneValuesMap.set(boneName, prevMags);
+  } else {
+    const prevMags = prevBoneValuesMap.get(boneName) || [];
+    prevMag = prevMags.reduce((sum, value) => sum + value, 0) / prevMags.length;
+  }
+  //   if (boneName === "leftIndexTip") {
+  //     console.log(
+  //       mag.toFixed(5),
+  //       prevMag.toFixed(5),
+  //       Math.abs(mag - prevMag).toFixed(5)
+  //     );
+  //   }
+  const oboeSensitivity = 0.001;
+  const normalSensitivity = 0.005;
+  const lowSensitivity = 0.01;
+  const sensitivity = lowSensitivity;
+  if (Math.abs(mag - prevMag) > sensitivity) {
+    return true;
+  } else {
+    return false;
+  }
+}
+
 function setupWebSocket() {
   const ws = new WebSocket("ws://localhost:8080");
   let retries = 0;
@@ -140,6 +181,19 @@ function setupWebSocket() {
         }
         addCubeToMesh(boneName, boneData, mesh);
       }
+
+      mqttOut.sendPattern([
+        boneToBit(message, "neck"),
+        boneToBit(message, "chest"),
+        boneToBit(message, "leftToe"),
+        boneToBit(message, "leftFoot"),
+        boneToBit(message, "leftToe"),
+        boneToBit(message, "rightLeg"),
+        boneToBit(message, "rightFoot"),
+        boneToBit(message, "rightToe"),
+        boneToBit(message, "chest", false),
+        boneToBit(message, "neck", false),
+      ]);
     }
   };
 
@@ -166,6 +220,7 @@ function setupWebSocket() {
 }
 
 setupWebSocket();
+const mqttOut = new MqttOut();
 
 // Treat the trail as a circular buffer
 // let trailIndex = 0;
@@ -187,7 +242,7 @@ dummy.scale.set(0, 0, 0);
 dummy.updateMatrix();
 
 // Create a cube
-const geometry = new THREE.BoxGeometry(0.003, 0.003, 0.003);
+const geometry = new THREE.BoxGeometry(0.01, 0.01, 0.01);
 
 for (const boneName of trackedBones) {
   const mesh = createBoneMesh(boneName);
