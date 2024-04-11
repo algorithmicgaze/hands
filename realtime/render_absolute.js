@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
 const ACTIVE_TRAIL_SIZE = 3;
-const PASSIVE_TRAIL_SIZE = 2000;
+const PASSIVE_TRAIL_SIZE = 500;
 
 const trackedBones = [
   "hip",
@@ -70,7 +70,18 @@ const trackedBones = [
   //   "rightLittleTip",
 ];
 
-//const sendingBones = [];
+const sendingBones = [
+  "leftFoot",
+  "leftUpLeg",
+  "leftUpperArm",
+  "leftLowerArm",
+  "leftLowerArm",
+  "rightLowerArm",
+  "rightLowerArm",
+  "rightUpperArm",
+  "rightUpLeg",
+  "rightFoot",
+];
 
 // const colorMap = {
 //   "leftFoot": 0x333333,
@@ -193,19 +204,8 @@ function setupWebSocket() {
         }
         addCubeToMesh(boneName, boneData, mesh);
       }
-
-      mqttOut.sendPattern([
-        boneBits["leftFoot"],
-        boneBits["leftUpLeg"],
-        boneBits["leftUpperArm"],
-        boneBits["leftLowerArm"],
-        boneBits["leftLowerArm"],
-        boneBits["rightLowerArm"],
-        boneBits["rightLowerArm"],
-        boneBits["rightUpperArm"],
-        boneBits["rightUpLeg"],
-        boneBits["rightFoot"],
-      ]);
+      const pattern = sendingBones.map((boneName) => boneBits[boneName]);
+      mqttOut.sendPattern(pattern);
     }
   };
 
@@ -255,13 +255,13 @@ dummy.updateMatrix();
 
 // Create a cube
 const passiveGeometry = new THREE.BoxGeometry(0.01, 0.01, 0.01);
-const activeGeometry = new THREE.BoxGeometry(0.2, 0.01, 0.01);
+const activeGeometry = new THREE.BoxGeometry(0.1, 0.01, 0.01);
 
 for (const boneName of trackedBones) {
   const passiveMesh = createBoneMesh(
     boneName,
     passiveGeometry,
-    { color: 0x666666 },
+    { color: 0x555555 },
     PASSIVE_TRAIL_SIZE
   );
   passiveBoneMeshMap.set(boneName, passiveMesh);
@@ -269,7 +269,7 @@ for (const boneName of trackedBones) {
   const activeMesh = createBoneMesh(
     boneName,
     activeGeometry,
-    { color: 0xff0000 },
+    { color: sendingBones.includes(boneName) ? 0xffffff : 0x555555 },
     ACTIVE_TRAIL_SIZE
   );
   activeBoneMeshMap.set(boneName, activeMesh);
