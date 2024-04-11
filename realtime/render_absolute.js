@@ -1,7 +1,8 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
-const TRAIL_SIZE = 2000;
+const ACTIVE_TRAIL_SIZE = 3;
+const PASSIVE_TRAIL_SIZE = 2000;
 
 const trackedBones = [
   "hip",
@@ -69,6 +70,8 @@ const trackedBones = [
   //   "rightLittleTip",
 ];
 
+//const sendingBones = [];
+
 // const colorMap = {
 //   "leftFoot": 0x333333,
 //   "rightFoot": 0x333333,
@@ -78,7 +81,8 @@ const trackedBones = [
 let leftHandPosition = new THREE.Vector3();
 let rightHandPosition = new THREE.Vector3();
 
-const boneMeshMap = new Map();
+const activeBoneMeshMap = new Map();
+const passiveBoneMeshMap = new Map();
 
 function addCubeToMesh(boneName, bone, mesh) {
   dummy.scale.set(1, 1, 1);
@@ -94,14 +98,14 @@ function addCubeToMesh(boneName, bone, mesh) {
   dummy.updateMatrix();
 
   mesh.setMatrixAt(mesh.index, dummy.matrix);
-  mesh.index = (mesh.index + 1) % TRAIL_SIZE;
+  mesh.index = (mesh.index + 1) % mesh.count;
   mesh.instanceMatrix.needsUpdate = true;
 }
 
-function createBoneMesh(boneName) {
+function createBoneMesh(boneName, geometry, materialProps, trailSize) {
   let color = "pink";
-  const material = new THREE.MeshBasicMaterial({ color });
-  const mesh = new THREE.InstancedMesh(geometry, material, TRAIL_SIZE);
+  const material = new THREE.MeshBasicMaterial(materialProps);
+  const mesh = new THREE.InstancedMesh(geometry, material, trailSize);
   mesh.frustumCulled = false;
   mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   mesh.index = 0;
@@ -109,7 +113,7 @@ function createBoneMesh(boneName) {
   const dummy = new THREE.Object3D();
   dummy.scale.set(0, 0, 0);
   dummy.updateMatrix();
-  for (let i = 0; i < TRAIL_SIZE; i++) {
+  for (let i = 0; i < mesh.count; i++) {
     mesh.setMatrixAt(i, dummy.matrix);
   }
   mesh.instanceMatrix.needsUpdate = true;
@@ -119,7 +123,6 @@ function createBoneMesh(boneName) {
 
 const prevBoneValuesMap = new Map();
 function boneToBit(message, boneName, update = true) {
-  // FIXME DOES NOT WOOOOORK BECAUSE IT HAS SIDE EFFECTS
   const bone = message[boneName];
   const { x, y, z } = bone.position;
 
@@ -172,9 +175,18 @@ function setupWebSocket() {
     const message = JSON.parse(event.data);
 
     if (message.type === "position") {
+      // Calculate the on/off state of each bone
+      const boneBits = {};
+      for (const boneName of trackedBones) {
+        boneBits[boneName] = boneToBit(message, boneName);
+      }
+
       // Update the cube position
       for (const boneName of trackedBones) {
-        const mesh = boneMeshMap.get(boneName);
+        const meshMap = boneBits[boneName]
+          ? activeBoneMeshMap
+          : passiveBoneMeshMap;
+        const mesh = meshMap.get(boneName);
         const boneData = message[boneName];
         if (!mesh || !boneData) {
           debugger;
@@ -183,16 +195,16 @@ function setupWebSocket() {
       }
 
       mqttOut.sendPattern([
-        boneToBit(message, "neck"),
-        boneToBit(message, "chest"),
-        boneToBit(message, "leftToe"),
-        boneToBit(message, "leftFoot"),
-        boneToBit(message, "leftToe"),
-        boneToBit(message, "rightLeg"),
-        boneToBit(message, "rightFoot"),
-        boneToBit(message, "rightToe"),
-        boneToBit(message, "chest", false),
-        boneToBit(message, "neck", false),
+        boneBits["leftFoot"],
+        boneBits["leftUpLeg"],
+        boneBits["leftUpperArm"],
+        boneBits["leftLowerArm"],
+        boneBits["leftLowerArm"],
+        boneBits["rightLowerArm"],
+        boneBits["rightLowerArm"],
+        boneBits["rightUpperArm"],
+        boneBits["rightUpLeg"],
+        boneBits["rightFoot"],
       ]);
     }
   };
@@ -242,12 +254,26 @@ dummy.scale.set(0, 0, 0);
 dummy.updateMatrix();
 
 // Create a cube
-const geometry = new THREE.BoxGeometry(0.01, 0.01, 0.01);
+const passiveGeometry = new THREE.BoxGeometry(0.01, 0.01, 0.01);
+const activeGeometry = new THREE.BoxGeometry(0.2, 0.01, 0.01);
 
 for (const boneName of trackedBones) {
-  const mesh = createBoneMesh(boneName);
-  boneMeshMap.set(boneName, mesh);
-  scene.add(mesh);
+  const passiveMesh = createBoneMesh(
+    boneName,
+    passiveGeometry,
+    { color: 0x666666 },
+    PASSIVE_TRAIL_SIZE
+  );
+  passiveBoneMeshMap.set(boneName, passiveMesh);
+  scene.add(passiveMesh);
+  const activeMesh = createBoneMesh(
+    boneName,
+    activeGeometry,
+    { color: 0xff0000 },
+    ACTIVE_TRAIL_SIZE
+  );
+  activeBoneMeshMap.set(boneName, activeMesh);
+  scene.add(activeMesh);
 }
 
 // const hipCubes = createBoneMesh(0x00ff00); scene.add(hipCubes);
