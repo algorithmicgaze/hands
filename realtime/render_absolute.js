@@ -268,7 +268,7 @@ for (const boneName of trackedBones) {
   scene.add(passiveMesh);
   const activeMesh = createBoneMesh(
     boneName,
-    activeGeometry,
+    sendingBones.includes(boneName) ? activeGeometry : passiveGeometry,
     { color: sendingBones.includes(boneName) ? 0xffffff : 0x555555 },
     ACTIVE_TRAIL_SIZE
   );
