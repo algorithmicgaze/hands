@@ -2,6 +2,34 @@ import * as THREE from "https://esm.sh/three@0.164.1";
 import { OrbitControls } from "https://esm.sh/three@0.164.1/examples/jsm/controls/OrbitControls.js";
 import { FBXLoader } from "https://esm.sh/three@0.164.1/examples/jsm/loaders/FBXLoader.js";
 
+const BONE_MAP = {
+    "hip": "mixamorigHips",
+    "spine": "mixamorigSpine",
+    "chest": "mixamorigSpine1",
+    "neck": "mixamorigNeck",
+    "head": "mixamorigHead",
+    "leftShoulder": "mixamorigLeftShoulder",
+    "leftUpperArm": "mixamorigLeftArm",
+    "leftLowerArm": "mixamorigLeftForeArm",
+    "leftHand": "mixamorigLeftHand",
+    "rightShoulder": "mixamorigRightShoulder",
+    "rightUpperArm": "mixamorigRightArm",
+    "rightLowerArm": "mixamorigRightForeArm",
+    "rightHand": "mixamorigRightHand",
+    "leftUpLeg": "mixamorigLeftUpLeg",
+    "leftLeg": "mixamorigLeftLeg",
+    "leftFoot": "mixamorigLeftFoot",
+    "leftToe": "mixamorigLeftToeBase",
+    "leftToeEnd": "mixamorigLeftToe_End",
+    "rightUpLeg": "mixamorigRightUpLeg",
+    "rightLeg": "mixamorigRightLeg",
+    "rightFoot": "mixamorigRightFoot",
+    "rightToe": "mixamorigRightToeBase",
+    "rightToeEnd": "mixamorigRightToe_End",
+}
+
+
+
 const clock = new THREE.Clock();
 
 const scene = new THREE.Scene();
@@ -73,14 +101,15 @@ controls.target.set(0, 100, 0);
 controls.update();
 
 // Load FBX model
-let mixer;
+let model, mixer;
 const loader = new FBXLoader();
 loader.load(
   "https://threejs.org/examples/models/fbx/Samba Dancing.fbx",
   function (object) {
-    mixer = new THREE.AnimationMixer(object);
-    const action = mixer.clipAction(object.animations[0]);
-    action.play();
+    model = object;
+    // mixer = new THREE.AnimationMixer(object);
+    // const action = mixer.clipAction(object.animations[0]);
+    // action.play();
     object.traverse((child) => {
       if (child.isMesh) {
         child.castShadow = true;
@@ -92,6 +121,57 @@ loader.load(
     scene.add(object);
   },
 );
+
+function setupWebSocket() {
+    const ws = new WebSocket("ws://localhost:8080");
+    let retries = 0;
+    const maxRetries = 10;
+    const maxDelay = 10000;
+  
+    ws.onopen = () => {
+      console.log("connected");
+    };
+  
+    const scale = 10;
+    ws.onmessage = (event) => {
+      const message = JSON.parse(event.data);
+      console.log(message);
+  
+      if (message.type === "position") {
+        for (const [rokokoBoneName, modelBoneName] of Object.entries(BONE_MAP)) {
+            const rokokoBone = message[rokokoBoneName];
+            const modelBone = model.getObjectByName(modelBoneName);
+            if (modelBone) {
+                modelBone.position.set(rokokoBone.position.x * scale, rokokoBone.position.y * scale, rokokoBone.position.z * scale);
+                modelBone.quaternion.set(rokokoBone.rotation.x, rokokoBone.rotation.y, rokokoBone.rotation.z, rokokoBone.rotation.w);
+            }
+        }
+      }
+    };
+  
+    ws.onclose = (e) => {
+      console.log("WebSocket closed. Attempting to reconnect...", e.reason);
+      retries++;
+      if (retries <= maxRetries) {
+        // Exponential backoff formula to calculate the delay before the next retry
+        let delay = Math.min(maxDelay, Math.pow(2, retries) * 100);
+        setTimeout(setupWebSocket, delay);
+      } else {
+        console.log("Maximum retries reached. Giving up.");
+      }
+    };
+  
+    ws.onerror = (err) => {
+      console.error(
+        "WebSocket encountered error: ",
+        err.message,
+        "Closing socket"
+      );
+      ws.close();
+    };
+  }
+  
+  setupWebSocket();
 
 function animate() {
   requestAnimationFrame(animate);
