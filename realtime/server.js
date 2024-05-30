@@ -3,7 +3,8 @@ const readline = require("readline");
 const dgram = require("node:dgram");
 const WebSocket = require("ws");
 const fs = require("fs");
-const LZ4 = require("lz4");
+// const LZ4 = require("lz4");
+const LZ4 = require("lz4-wasm-nodejs");
 const protobuf = require("protobufjs");
 
 class MocapReader {
@@ -57,7 +58,7 @@ class MocapReader {
 
       const lines = [];
       rl.on("line", (line) => lines.push(line)).on("close", () =>
-        resolve(lines)
+        resolve(lines),
       );
     });
   }
@@ -89,7 +90,7 @@ function startUDPListener(port, logFile) {
   });
 
   server.on("message", (data, rinfo) => {
-    const decodedBlock = LZ4.decode(data);
+    const decodedBlock = LZ4.decompress(data);
     const blockString = decodedBlock.toString("utf-8");
     const jsonData = JSON.parse(blockString);
 
@@ -109,7 +110,7 @@ function startUDPListener(port, logFile) {
         JSON.stringify({
           type: "position",
           ...jsonData.scene.actors[0].body,
-        })
+        }),
       );
     });
   });
@@ -133,7 +134,7 @@ async function replayMocapData(mocapData) {
             type: "position",
             timestamp: frame.timestamp,
             ...frame.body,
-          })
+          }),
         );
       });
 
