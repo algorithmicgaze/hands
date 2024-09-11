@@ -100,12 +100,7 @@ function addCubeToMesh(boneName, bone, mesh) {
   dummy.position.x = bone.position.x * 3;
   dummy.position.y = bone.position.y * 3;
   dummy.position.z = bone.position.z * 3;
-  dummy.quaternion.set(
-    bone.rotation.x,
-    bone.rotation.y,
-    bone.rotation.z,
-    bone.rotation.w
-  );
+  dummy.quaternion.set(bone.rotation.x, bone.rotation.y, bone.rotation.z, bone.rotation.w);
   dummy.updateMatrix();
 
   mesh.setMatrixAt(mesh.index, dummy.matrix);
@@ -141,10 +136,7 @@ function boneToBit(message, boneName, update = true) {
   let prevMag = 0;
   if (update) {
     const prevMags = prevBoneValuesMap.get(boneName) || [];
-    prevMag =
-      prevMags.length === 0
-        ? 0
-        : prevMags.reduce((sum, value) => sum + value, 0) / prevMags.length;
+    prevMag = prevMags.length === 0 ? 0 : prevMags.reduce((sum, value) => sum + value, 0) / prevMags.length;
     prevMags.push(mag);
     if (prevMags.length > 5) {
       prevMags.shift();
@@ -184,6 +176,7 @@ function setupWebSocket() {
 
   ws.onmessage = (event) => {
     const message = JSON.parse(event.data);
+    console.log(message);
 
     if (message.type === "position") {
       // Calculate the on/off state of each bone
@@ -194,9 +187,7 @@ function setupWebSocket() {
 
       // Update the cube position
       for (const boneName of trackedBones) {
-        const meshMap = boneBits[boneName]
-          ? activeBoneMeshMap
-          : passiveBoneMeshMap;
+        const meshMap = boneBits[boneName] ? activeBoneMeshMap : passiveBoneMeshMap;
         const mesh = meshMap.get(boneName);
         const boneData = message[boneName];
         if (!mesh || !boneData) {
@@ -222,11 +213,7 @@ function setupWebSocket() {
   };
 
   ws.onerror = (err) => {
-    console.error(
-      "WebSocket encountered error: ",
-      err.message,
-      "Closing socket"
-    );
+    console.error("WebSocket encountered error: ", err.message, "Closing socket");
     ws.close();
   };
 }
@@ -239,12 +226,7 @@ const mqttOut = new MqttOut();
 
 // Initialize THREE.js scene
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(
-  75,
-  window.innerWidth / window.innerHeight,
-  0.1,
-  1000
-);
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
 const renderer = new THREE.WebGLRenderer();
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
@@ -258,12 +240,7 @@ const passiveGeometry = new THREE.BoxGeometry(0.01, 0.01, 0.01);
 const activeGeometry = new THREE.BoxGeometry(0.1, 0.01, 0.01);
 
 for (const boneName of trackedBones) {
-  const passiveMesh = createBoneMesh(
-    boneName,
-    passiveGeometry,
-    { color: 0x555555 },
-    PASSIVE_TRAIL_SIZE
-  );
+  const passiveMesh = createBoneMesh(boneName, passiveGeometry, { color: 0x555555 }, PASSIVE_TRAIL_SIZE);
   passiveBoneMeshMap.set(boneName, passiveMesh);
   scene.add(passiveMesh);
   const activeMesh = createBoneMesh(

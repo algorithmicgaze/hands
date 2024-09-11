@@ -56,9 +56,7 @@ class MocapReader {
       });
 
       const lines = [];
-      rl.on("line", (line) => lines.push(line)).on("close", () =>
-        resolve(lines)
-      );
+      rl.on("line", (line) => lines.push(line)).on("close", () => resolve(lines));
     });
   }
 }
@@ -138,7 +136,7 @@ async function replayMocapData(mocapData) {
       });
 
       // Wait for the next tick
-      // await new Promise((resolve) => setTimeout(resolve, 1000 / 30));
+      //   await new Promise((resolve) => setTimeout(resolve, 1000 / 30));
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
     console.log(`Replay finished, restarting...`);
