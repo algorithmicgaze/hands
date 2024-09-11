@@ -89,6 +89,9 @@ const sendingBones = [
 
 // }
 
+let isSendingVibrations = false;
+document.title = 'ACP [MUTED]'
+
 let leftHandPosition = new THREE.Vector3();
 let rightHandPosition = new THREE.Vector3();
 
@@ -196,7 +199,9 @@ function setupWebSocket() {
         addCubeToMesh(boneName, boneData, mesh);
       }
       const pattern = sendingBones.map((boneName) => boneBits[boneName]);
-      mqttOut.sendPattern(pattern);
+      if (isSendingVibrations) {
+        mqttOut.sendPattern(pattern);
+      }
     }
   };
 
@@ -314,6 +319,16 @@ function onKeyDown(e) {
       },
       options
     );
+  } else if (e.key === "m") {
+    isSendingVibrations = !isSendingVibrations;
+    if (isSendingVibrations) {
+      document.title = 'ACP [SENDING]';
+      
+
+    } else {
+      document.title = 'ACP [MUTED]'
+    }
+
   }
 }
 
