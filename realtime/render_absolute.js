@@ -329,8 +329,10 @@ function onKeyDown(e) {
   } else if (e.key === "f") {
     if (document.fullscreenElement) {
       document.exitFullscreen();
+      document.documentElement.style.cursor = "auto";
     } else {
       document.documentElement.requestFullscreen();
+      document.documentElement.style.cursor = "none";
     }
   }
 }
