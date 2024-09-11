@@ -56,9 +56,7 @@ class MocapReader {
       });
 
       const lines = [];
-      rl.on("line", (line) => lines.push(line)).on("close", () =>
-        resolve(lines),
-      );
+      rl.on("line", (line) => lines.push(line)).on("close", () => resolve(lines));
     });
   }
 }
@@ -109,7 +107,7 @@ function startUDPListener(port, logFile) {
         JSON.stringify({
           type: "position",
           ...jsonData.scene.actors[0].body,
-        }),
+        })
       );
     });
   });
@@ -133,12 +131,12 @@ async function replayMocapData(mocapData) {
             type: "position",
             timestamp: frame.timestamp,
             ...frame.body,
-          }),
+          })
         );
       });
 
       // Wait for the next tick
-      // await new Promise((resolve) => setTimeout(resolve, 1000 / 30));
+      //   await new Promise((resolve) => setTimeout(resolve, 1000 / 30));
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
     console.log(`Replay finished, restarting...`);
