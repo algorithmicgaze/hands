@@ -90,7 +90,7 @@ const sendingBones = [
 // }
 
 let isSendingVibrations = false;
-document.title = 'ACP [MUTED]'
+document.title = "ACP [MUTED]";
 
 let leftHandPosition = new THREE.Vector3();
 let rightHandPosition = new THREE.Vector3();
@@ -322,13 +322,16 @@ function onKeyDown(e) {
   } else if (e.key === "m") {
     isSendingVibrations = !isSendingVibrations;
     if (isSendingVibrations) {
-      document.title = 'ACP [SENDING]';
-      
-
+      document.title = "ACP [SENDING]";
     } else {
-      document.title = 'ACP [MUTED]'
+      document.title = "ACP [MUTED]";
     }
-
+  } else if (e.key === "f") {
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    } else {
+      document.documentElement.requestFullscreen();
+    }
   }
 }
 
