@@ -164,7 +164,7 @@ function boneToBit(message, boneName, update = true) {
   const oboeSensitivity = 0.001;
   const normalSensitivity = 0.005;
   const lowSensitivity = 0.01;
-  const sensitivity = lowSensitivity;
+  const sensitivity = normalSensitivity;
   if (Math.abs(mag - prevMag) > sensitivity) {
     return true;
   } else {
