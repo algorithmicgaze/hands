@@ -1,51 +1,55 @@
 import * as THREE from "https://esm.sh/three@0.164.1";
 import { OrbitControls } from "https://esm.sh/three@0.164.1/examples/jsm/controls/OrbitControls.js";
 import { FBXLoader } from "https://esm.sh/three@0.164.1/examples/jsm/loaders/FBXLoader.js";
+import { calculateRelativeBones } from "./bone_utils.js";
+import GUI from "https://esm.sh/lil-gui@0.19.2";
+
+const gui = new GUI();
+
+const options = {
+  boneScale: 150,
+  posScale: 150,
+};
+
+gui.add(options, "boneScale", 0, 150, 0.01);
+gui.add(options, "posScale", 0, 150, 0.01);
 
 const BONE_MAP = {
-    "hip": "mixamorigHips",
-    "spine": "mixamorigSpine",
-    "chest": "mixamorigSpine1",
-    "neck": "mixamorigNeck",
-    "head": "mixamorigHead",
-    "leftShoulder": "mixamorigLeftShoulder",
-    "leftUpperArm": "mixamorigLeftArm",
-    "leftLowerArm": "mixamorigLeftForeArm",
-    "leftHand": "mixamorigLeftHand",
-    "rightShoulder": "mixamorigRightShoulder",
-    "rightUpperArm": "mixamorigRightArm",
-    "rightLowerArm": "mixamorigRightForeArm",
-    "rightHand": "mixamorigRightHand",
-    "leftUpLeg": "mixamorigLeftUpLeg",
-    "leftLeg": "mixamorigLeftLeg",
-    "leftFoot": "mixamorigLeftFoot",
-    "leftToe": "mixamorigLeftToeBase",
-    "leftToeEnd": "mixamorigLeftToe_End",
-    "rightUpLeg": "mixamorigRightUpLeg",
-    "rightLeg": "mixamorigRightLeg",
-    "rightFoot": "mixamorigRightFoot",
-    "rightToe": "mixamorigRightToeBase",
-    "rightToeEnd": "mixamorigRightToe_End",
-}
-
-
+  hip: "mixamorigHips",
+  spine: "mixamorigSpine",
+  chest: "mixamorigSpine1",
+  neck: "mixamorigNeck",
+  head: "mixamorigHead",
+  leftShoulder: "mixamorigLeftShoulder",
+  leftUpperArm: "mixamorigLeftArm",
+  leftLowerArm: "mixamorigLeftForeArm",
+  leftHand: "mixamorigLeftHand",
+  rightShoulder: "mixamorigRightShoulder",
+  rightUpperArm: "mixamorigRightArm",
+  rightLowerArm: "mixamorigRightForeArm",
+  rightHand: "mixamorigRightHand",
+  leftUpLeg: "mixamorigLeftUpLeg",
+  leftLeg: "mixamorigLeftLeg",
+  leftFoot: "mixamorigLeftFoot",
+  leftToe: "mixamorigLeftToeBase",
+  leftToeEnd: "mixamorigLeftToe_End",
+  rightUpLeg: "mixamorigRightUpLeg",
+  rightLeg: "mixamorigRightLeg",
+  rightFoot: "mixamorigRightFoot",
+  rightToe: "mixamorigRightToeBase",
+  rightToeEnd: "mixamorigRightToe_End",
+};
 
 const clock = new THREE.Clock();
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xa0a0a0);
 scene.fog = new THREE.Fog(0xa0a0a0, 200, 1000);
-// Create cube
-const geometry = new THREE.BoxGeometry();
-const material = new THREE.MeshStandardMaterial({ color: 0x00ff00 });
-const cube = new THREE.Mesh(geometry, material);
-cube.position.set(2.0, 0.5, 0.0);
-scene.add(cube);
 
 // Create floor
 const mesh = new THREE.Mesh(
   new THREE.PlaneGeometry(200, 200),
-  new THREE.MeshPhongMaterial({ color: 0x999999, depthWrite: false }),
+  new THREE.MeshPhongMaterial({ color: 0x999999, depthWrite: false })
 );
 mesh.rotation.x = -Math.PI / 2;
 mesh.receiveShadow = true;
@@ -81,12 +85,12 @@ scene.add(spotLight);
 const gridHelper = new THREE.GridHelper(200, 50);
 scene.add(gridHelper);
 
-const camera = new THREE.PerspectiveCamera(
-  75,
-  window.innerWidth / window.innerHeight,
-  0.1,
-  1000,
-);
+const bodyGroup = new THREE.Group();
+bodyGroup.position.set(-200, 0, 0);
+scene.add(bodyGroup);
+const bodyMap = {};
+
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
 camera.position.set(100, 200, 300);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -101,77 +105,97 @@ controls.target.set(0, 100, 0);
 controls.update();
 
 // Load FBX model
-let model, mixer;
+let model;
 const loader = new FBXLoader();
-loader.load(
-  "https://threejs.org/examples/models/fbx/Samba Dancing.fbx",
-  function (object) {
-    model = object;
-    // mixer = new THREE.AnimationMixer(object);
-    // const action = mixer.clipAction(object.animations[0]);
-    // action.play();
-    object.traverse((child) => {
-      if (child.isMesh) {
-        child.castShadow = true;
-        child.receiveShadow = true;
-      }
-    });
+loader.load("xbot.fbx", function (object) {
+  model = object;
+  object.traverse((child) => {
+    if (child.isMesh) {
+      child.castShadow = true;
+      child.receiveShadow = true;
+    }
+  });
 
-    // object.scale.set(0.01, 0.01, 0.01);
-    scene.add(object);
-  },
-);
+  scene.add(object);
+});
 
+let count = 0;
 function setupWebSocket() {
-    const ws = new WebSocket("ws://localhost:8080");
-    let retries = 0;
-    const maxRetries = 10;
-    const maxDelay = 10000;
-  
-    ws.onopen = () => {
-      console.log("connected");
-    };
-  
-    const scale = 10;
-    ws.onmessage = (event) => {
-      const message = JSON.parse(event.data);
-      console.log(message);
-  
-      if (message.type === "position") {
-        for (const [rokokoBoneName, modelBoneName] of Object.entries(BONE_MAP)) {
-            const rokokoBone = message[rokokoBoneName];
-            const modelBone = model.getObjectByName(modelBoneName);
-            if (modelBone) {
-                modelBone.position.set(rokokoBone.position.x * scale, rokokoBone.position.y * scale, rokokoBone.position.z * scale);
-                modelBone.quaternion.set(rokokoBone.rotation.x, rokokoBone.rotation.y, rokokoBone.rotation.z, rokokoBone.rotation.w);
-            }
+  const ws = new WebSocket("ws://localhost:8080");
+  let retries = 0;
+  const maxRetries = 10;
+  const maxDelay = 10000;
+
+  ws.onopen = () => {
+    console.log("connected");
+  };
+
+  ws.onmessage = (event) => {
+    if (!model) {
+      return;
+    }
+    const message = JSON.parse(event.data);
+    const boneScale = options.boneScale;
+    const posScale = options.posScale;
+
+    if (message.type === "position") {
+      const relativeData = calculateRelativeBones(message);
+      for (const [rokokoBoneName, modelBoneName] of Object.entries(BONE_MAP)) {
+        const modelBone = model.getObjectByName(modelBoneName);
+        // const rokokoBone = message[rokokoBoneName];
+        // const modelBone = model.getObjectByName(modelBoneName);
+
+        if (modelBone) {
+          const absPos = message[rokokoBoneName].position;
+          const absRot = message[rokokoBoneName].rotation;
+          const relPos = relativeData[rokokoBoneName].position;
+          const relRot = relativeData[rokokoBoneName].rotation;
+          //   if (["hip", "spine", "chest"].includes(rokokoBoneName)) {
+          //     count++;
+          //     if (count < 100) {
+          //       console.log(rokokoBoneName, initialPos, absPos);
+          //     }
+          //   }
+
+          //   modelBone.position.set(absPos.x * boneScale, absPos.y * boneScale, absPos.z * boneScale);
+          modelBone.quaternion.set(relRot.x, relRot.y, relRot.z, relRot.w);
+
+          if (!bodyMap[rokokoBoneName]) {
+            const geometry = new THREE.SphereGeometry(5, 32, 32);
+            const material = new THREE.MeshStandardMaterial({
+              color: 0xffff00,
+            });
+            const sphere = new THREE.Mesh(geometry, material);
+            sphere.castShadow = true;
+            sphere.receiveShadow = true;
+            scene.add(sphere);
+            bodyMap[rokokoBoneName] = sphere;
+          }
+          bodyMap[rokokoBoneName].position.set(absPos.x * posScale, absPos.y * posScale, absPos.z * posScale);
         }
       }
-    };
-  
-    ws.onclose = (e) => {
-      console.log("WebSocket closed. Attempting to reconnect...", e.reason);
-      retries++;
-      if (retries <= maxRetries) {
-        // Exponential backoff formula to calculate the delay before the next retry
-        let delay = Math.min(maxDelay, Math.pow(2, retries) * 100);
-        setTimeout(setupWebSocket, delay);
-      } else {
-        console.log("Maximum retries reached. Giving up.");
-      }
-    };
-  
-    ws.onerror = (err) => {
-      console.error(
-        "WebSocket encountered error: ",
-        err.message,
-        "Closing socket"
-      );
-      ws.close();
-    };
-  }
-  
-  setupWebSocket();
+    }
+  };
+
+  ws.onclose = (e) => {
+    console.log("WebSocket closed. Attempting to reconnect...", e.reason);
+    retries++;
+    if (retries <= maxRetries) {
+      // Exponential backoff formula to calculate the delay before the next retry
+      let delay = Math.min(maxDelay, Math.pow(2, retries) * 100);
+      setTimeout(setupWebSocket, delay);
+    } else {
+      console.log("Maximum retries reached. Giving up.");
+    }
+  };
+
+  ws.onerror = (err) => {
+    console.error("WebSocket encountered error: ", err.message, "Closing socket");
+    ws.close();
+  };
+}
+
+setupWebSocket();
 
 function animate() {
   requestAnimationFrame(animate);
@@ -201,7 +225,6 @@ function render() {
   }
 
   const delta = clock.getDelta();
-  if (mixer) mixer.update(delta);
 
   renderer.render(scene, camera);
   requestAnimationFrame(render);
