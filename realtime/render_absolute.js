@@ -1,10 +1,10 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
-const ACTIVE_TRAIL_SIZE = 100;
+const ACTIVE_TRAIL_SIZE = 120;
 const PASSIVE_TRAIL_SIZE = 5000;
 const ACTIVE_EVERY_NTH = 1;
-const PASSIVE_EVERY_NTH = 30;
+const PASSIVE_EVERY_NTH = 10;
 
 const trackedBones = [
   "hip",
@@ -224,7 +224,7 @@ for (const boneName of trackedBones) {
     boneMeshMap.set(boneName, activeMesh);
     skeletonGroup.add(activeMesh);
   } else {
-    const passiveMesh = createBoneMesh(boneName, passiveGeometry, { color: 0x888888 }, PASSIVE_TRAIL_SIZE);
+    const passiveMesh = createBoneMesh(boneName, passiveGeometry, { color: 0x555555 }, PASSIVE_TRAIL_SIZE);
     boneMeshMap.set(boneName, passiveMesh);
     skeletonGroup.add(passiveMesh);
   }
@@ -246,7 +246,7 @@ for (const boneName of trackedBones) {
 // const rightShoulderCubes = createBoneMesh(0x6666ff); scene.add(rightShoulderCubes);
 
 // add a grid helper
-const gridHelper = new THREE.GridHelper(10, 10, 0x111111, 0x222222);
+const gridHelper = new THREE.GridHelper(10, 10, 0x333333, 0x333333);
 gridHelper.rotation.y = Math.PI / 4;
 scene.add(gridHelper);
 // Add OrbitControls
