@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
-const ACTIVE_TRAIL_SIZE = 10;
+const ACTIVE_TRAIL_SIZE = 100;
 const PASSIVE_TRAIL_SIZE = 5000;
 const ACTIVE_EVERY_NTH = 1;
 const PASSIVE_EVERY_NTH = 30;
