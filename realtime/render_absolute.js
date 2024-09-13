@@ -46,7 +46,7 @@ const sendingBones = [
 ];
 
 let isSendingVibrations = false;
-let isDrawingSkeleton = isSendingVibrations;
+let isDrawingSkeleton = false;
 document.title = "ACP [MUTED]";
 
 const boneMeshMap = new Map();
@@ -307,16 +307,11 @@ function onKeyDown(e) {
     );
   } else if (e.key === "m") {
     isSendingVibrations = !isSendingVibrations;
-    isDrawingSkeleton = isSendingVibrations;
     if (isSendingVibrations) {
       document.title = "ACP [SENDING]";
     } else {
       sendMuteSignal();
       document.title = "ACP [MUTED]";
-    }
-    skeletonGroup.visible = isDrawingSkeleton;
-    if (isDrawingSkeleton) {
-      clearSkeletonHistory();
     }
   } else if (e.key === "v") {
     isDrawingSkeleton = !isDrawingSkeleton;
