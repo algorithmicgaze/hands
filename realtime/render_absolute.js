@@ -123,6 +123,11 @@ function clearSkeletonHistory() {
   }
 }
 
+function sendMuteSignal() {
+  const pattern = Array(10).fill(false);
+  mqttOut.sendPattern(pattern);
+}
+
 function setupWebSocket() {
   const ws = new WebSocket("ws://localhost:8080");
   let retries = 0;
@@ -298,7 +303,7 @@ function onKeyDown(e) {
         const output = JSON.stringify(gltf, null, 2);
         saveString(output, "out.gltf");
       },
-      options
+      options,
     );
   } else if (e.key === "m") {
     isSendingVibrations = !isSendingVibrations;
@@ -306,6 +311,7 @@ function onKeyDown(e) {
     if (isSendingVibrations) {
       document.title = "ACP [SENDING]";
     } else {
+      sendMuteSignal();
       document.title = "ACP [MUTED]";
     }
     skeletonGroup.visible = isDrawingSkeleton;
