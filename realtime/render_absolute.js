@@ -1,8 +1,10 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
-const ACTIVE_TRAIL_SIZE = 3;
-const PASSIVE_TRAIL_SIZE = 500;
+const ACTIVE_TRAIL_SIZE = 10;
+const PASSIVE_TRAIL_SIZE = 5000;
+const ACTIVE_EVERY_NTH = 1;
+const PASSIVE_EVERY_NTH = 30;
 
 const trackedBones = [
   "hip",
@@ -28,46 +30,6 @@ const trackedBones = [
   "rightFoot",
   "rightToe",
   "rightToeEnd",
-  //   "leftThumbProximal",
-  //   "leftThumbMedial",
-  //   "leftThumbDistal",
-  //   "leftThumbTip",
-  //   "leftIndexProximal",
-  //   "leftIndexMedial",
-  //   "leftIndexDistal",
-  //   "leftIndexTip",
-  //   "leftMiddleProximal",
-  //   "leftMiddleMedial",
-  //   "leftMiddleDistal",
-  //   "leftMiddleTip",
-  //   "leftRingProximal",
-  //   "leftRingMedial",
-  //   "leftRingDistal",
-  //   "leftRingTip",
-  //   "leftLittleProximal",
-  //   "leftLittleMedial",
-  //   "leftLittleDistal",
-  //   "leftLittleTip",
-  //   "rightThumbProximal",
-  //   "rightThumbMedial",
-  //   "rightThumbDistal",
-  //   "rightThumbTip",
-  //   "rightIndexProximal",
-  //   "rightIndexMedial",
-  //   "rightIndexDistal",
-  //   "rightIndexTip",
-  //   "rightMiddleProximal",
-  //   "rightMiddleMedial",
-  //   "rightMiddleDistal",
-  //   "rightMiddleTip",
-  //   "rightRingProximal",
-  //   "rightRingMedial",
-  //   "rightRingDistal",
-  //   "rightRingTip",
-  //   "rightLittleProximal",
-  //   "rightLittleMedial",
-  //   "rightLittleDistal",
-  //   "rightLittleTip",
 ];
 
 const sendingBones = [
@@ -83,20 +45,11 @@ const sendingBones = [
   "rightFoot",
 ];
 
-// const colorMap = {
-//   "leftFoot": 0x333333,
-//   "rightFoot": 0x333333,
-
-// }
-
 let isSendingVibrations = false;
+let isDrawingSkeleton = isSendingVibrations;
 document.title = "ACP [MUTED]";
 
-let leftHandPosition = new THREE.Vector3();
-let rightHandPosition = new THREE.Vector3();
-
-const activeBoneMeshMap = new Map();
-const passiveBoneMeshMap = new Map();
+const boneMeshMap = new Map();
 
 function addCubeToMesh(boneName, bone, mesh) {
   dummy.scale.set(1, 1, 1);
@@ -112,7 +65,6 @@ function addCubeToMesh(boneName, bone, mesh) {
 }
 
 function createBoneMesh(boneName, geometry, materialProps, trailSize) {
-  let color = "pink";
   const material = new THREE.MeshBasicMaterial(materialProps);
   const mesh = new THREE.InstancedMesh(geometry, material, trailSize);
   mesh.frustumCulled = false;
@@ -149,13 +101,6 @@ function boneToBit(message, boneName, update = true) {
     const prevMags = prevBoneValuesMap.get(boneName) || [];
     prevMag = prevMags.reduce((sum, value) => sum + value, 0) / prevMags.length;
   }
-  //   if (boneName === "leftIndexTip") {
-  //     console.log(
-  //       mag.toFixed(5),
-  //       prevMag.toFixed(5),
-  //       Math.abs(mag - prevMag).toFixed(5)
-  //     );
-  //   }
   const oboeSensitivity = 0.001;
   const normalSensitivity = 0.005;
   const lowSensitivity = 0.01;
@@ -167,11 +112,23 @@ function boneToBit(message, boneName, update = true) {
   }
 }
 
+function clearSkeletonHistory() {
+  const invisibleMatrix = new THREE.Matrix4().scale(new THREE.Vector3(0, 0, 0));
+  for (const mesh of boneMeshMap.values()) {
+    for (let i = 0; i < mesh.count; i++) {
+      mesh.setMatrixAt(i, invisibleMatrix);
+    }
+    mesh.index = 0;
+    mesh.instanceMatrix.needsUpdate = true;
+  }
+}
+
 function setupWebSocket() {
   const ws = new WebSocket("ws://localhost:8080");
   let retries = 0;
   const maxRetries = 10;
   const maxDelay = 10000;
+  let messageIndex = 0;
 
   ws.onopen = () => {
     console.log("connected");
@@ -179,7 +136,7 @@ function setupWebSocket() {
 
   ws.onmessage = (event) => {
     const message = JSON.parse(event.data);
-    console.log(message);
+    // console.log(message);
 
     if (message.type === "position") {
       // Calculate the on/off state of each bone
@@ -190,18 +147,32 @@ function setupWebSocket() {
 
       // Update the cube position
       for (const boneName of trackedBones) {
-        const meshMap = boneBits[boneName] ? activeBoneMeshMap : passiveBoneMeshMap;
-        const mesh = meshMap.get(boneName);
+        const isActive = sendingBones.includes(boneName);
+        let addCube = false;
+        if (isActive) {
+          if (messageIndex % ACTIVE_EVERY_NTH === 0) {
+            addCube = true;
+          }
+        } else {
+          if (messageIndex % PASSIVE_EVERY_NTH === 0) {
+            console.log(messageIndex, PASSIVE_EVERY_NTH);
+            addCube = true;
+          }
+        }
+        const mesh = boneMeshMap.get(boneName);
         const boneData = message[boneName];
         if (!mesh || !boneData) {
           debugger;
         }
-        addCubeToMesh(boneName, boneData, mesh);
+        if (addCube) {
+          addCubeToMesh(boneName, boneData, mesh);
+        }
       }
       const pattern = sendingBones.map((boneName) => boneBits[boneName]);
       if (isSendingVibrations) {
         mqttOut.sendPattern(pattern);
       }
+      messageIndex++;
     }
   };
 
@@ -233,6 +204,9 @@ const mqttOut = new MqttOut();
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
 const renderer = new THREE.WebGLRenderer();
+const skeletonGroup = new THREE.Group();
+scene.add(skeletonGroup);
+skeletonGroup.visible = isDrawingSkeleton;
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 
@@ -245,17 +219,23 @@ const passiveGeometry = new THREE.BoxGeometry(0.01, 0.01, 0.01);
 const activeGeometry = new THREE.BoxGeometry(0.1, 0.01, 0.01);
 
 for (const boneName of trackedBones) {
-  const passiveMesh = createBoneMesh(boneName, passiveGeometry, { color: 0x555555 }, PASSIVE_TRAIL_SIZE);
-  passiveBoneMeshMap.set(boneName, passiveMesh);
-  scene.add(passiveMesh);
-  const activeMesh = createBoneMesh(
-    boneName,
-    sendingBones.includes(boneName) ? activeGeometry : passiveGeometry,
-    { color: sendingBones.includes(boneName) ? 0xffffff : 0x555555 },
-    ACTIVE_TRAIL_SIZE
-  );
-  activeBoneMeshMap.set(boneName, activeMesh);
-  scene.add(activeMesh);
+  if (sendingBones.includes(boneName)) {
+    const activeMesh = createBoneMesh(boneName, activeGeometry, { color: 0xffffff }, ACTIVE_TRAIL_SIZE);
+    boneMeshMap.set(boneName, activeMesh);
+    skeletonGroup.add(activeMesh);
+  } else {
+    const passiveMesh = createBoneMesh(boneName, passiveGeometry, { color: 0x888888 }, PASSIVE_TRAIL_SIZE);
+    boneMeshMap.set(boneName, passiveMesh);
+    skeletonGroup.add(passiveMesh);
+  }
+  //   const activeMesh = createBoneMesh(
+  //     boneName,
+  //     sendingBones.includes(boneName) ? activeGeometry : passiveGeometry,
+  //     { color: sendingBones.includes(boneName) ? 0xffffff : 0x888888 },
+  //     ACTIVE_TRAIL_SIZE
+  //   );
+  //   activeBoneMeshMap.set(boneName, activeMesh);
+  //   skeletonGroup.add(activeMesh);
 }
 
 // const hipCubes = createBoneMesh(0x00ff00); scene.add(hipCubes);
@@ -266,7 +246,8 @@ for (const boneName of trackedBones) {
 // const rightShoulderCubes = createBoneMesh(0x6666ff); scene.add(rightShoulderCubes);
 
 // add a grid helper
-const gridHelper = new THREE.GridHelper(10, 10, 0x222222, 0x333333);
+const gridHelper = new THREE.GridHelper(10, 10, 0x111111, 0x222222);
+gridHelper.rotation.y = Math.PI / 4;
 scene.add(gridHelper);
 // Add OrbitControls
 const controls = new OrbitControls(camera, renderer.domElement);
@@ -321,10 +302,21 @@ function onKeyDown(e) {
     );
   } else if (e.key === "m") {
     isSendingVibrations = !isSendingVibrations;
+    isDrawingSkeleton = isSendingVibrations;
     if (isSendingVibrations) {
       document.title = "ACP [SENDING]";
     } else {
       document.title = "ACP [MUTED]";
+    }
+    skeletonGroup.visible = isDrawingSkeleton;
+    if (isDrawingSkeleton) {
+      clearSkeletonHistory();
+    }
+  } else if (e.key === "v") {
+    isDrawingSkeleton = !isDrawingSkeleton;
+    skeletonGroup.visible = isDrawingSkeleton;
+    if (isDrawingSkeleton) {
+      clearSkeletonHistory();
     }
   } else if (e.key === "f") {
     if (document.fullscreenElement) {
