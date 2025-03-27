@@ -129,7 +129,7 @@ function sendMuteSignal() {
 }
 
 function setupWebSocket() {
-  const ws = new WebSocket("ws://localhost:8080");
+  const ws = new WebSocket("ws://192.168.1.121:9001");
   let retries = 0;
   const maxRetries = 10;
   const maxDelay = 10000;
