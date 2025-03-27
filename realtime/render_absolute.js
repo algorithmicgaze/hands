@@ -46,7 +46,7 @@ const sendingBones = [
 ];
 
 let isSendingVibrations = false;
-let isDrawingSkeleton = isSendingVibrations;
+let isDrawingSkeleton = false;
 document.title = "ACP [MUTED]";
 
 const boneMeshMap = new Map();
@@ -121,6 +121,11 @@ function clearSkeletonHistory() {
     mesh.index = 0;
     mesh.instanceMatrix.needsUpdate = true;
   }
+}
+
+function sendMuteSignal() {
+  const pattern = Array(10).fill(false);
+  mqttOut.sendPattern(pattern);
 }
 
 function setupWebSocket() {
@@ -298,19 +303,15 @@ function onKeyDown(e) {
         const output = JSON.stringify(gltf, null, 2);
         saveString(output, "out.gltf");
       },
-      options
+      options,
     );
   } else if (e.key === "m") {
     isSendingVibrations = !isSendingVibrations;
-    isDrawingSkeleton = isSendingVibrations;
     if (isSendingVibrations) {
       document.title = "ACP [SENDING]";
     } else {
+      sendMuteSignal();
       document.title = "ACP [MUTED]";
-    }
-    skeletonGroup.visible = isDrawingSkeleton;
-    if (isDrawingSkeleton) {
-      clearSkeletonHistory();
     }
   } else if (e.key === "v") {
     isDrawingSkeleton = !isDrawingSkeleton;
