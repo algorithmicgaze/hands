@@ -27,6 +27,12 @@ install it with 'manage library' option in arduino
 info:
 https://pubsubclient.knolleary.net/
 
+## Setup
+
+Raspberry Pi is on 192.168.1.121.
+MQTT server is on 192.168.1.121:1883
+Websockets are on 192.168.1.121:9001
+
 ## Foot Pedal
 
 The visualiser is made to be controlled by a foot pedal, to control play/pause/reset and the send rate. Here is the proper configuration:
