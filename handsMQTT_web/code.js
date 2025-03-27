@@ -1,7 +1,14 @@
 ///*
 
+// const client = mqtt.connect(
+//   "wss://algorithmicgaze:oyxIrENHt8mM2ONQ@algorithmicgaze.cloud.shiftr.io",
+//   {
+//     clientId: "hands_data_web_local",
+//   }
+// );
+
 const client = mqtt.connect(
-  "wss://algorithmicgaze:oyxIrENHt8mM2ONQ@algorithmicgaze.cloud.shiftr.io",
+  "ws://192.168.1.121:9001",
   {
     clientId: "hands_data_web_local",
   }
