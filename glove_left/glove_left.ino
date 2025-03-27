@@ -16,16 +16,16 @@ const char* password_list[] = { "95203737", "SLA-YTEdScs!", "homebase", "k?Uh6Xr
 const int num_networks = 4;
 
 // shiftr broker
-const char* mqttServer = "algorithmicgaze.cloud.shiftr.io";
-const int mqttPort = 1883;
-const char* mqttUser = "algorithmicgaze";
-const char* mqttPassword = "oyxIrENHt8mM2ONQ";
+// const char* mqttServer = "algorithmicgaze.cloud.shiftr.io";
+// const int mqttPort = 1883;
+// const char* mqttUser = "algorithmicgaze";
+// const char* mqttPassword = "oyxIrENHt8mM2ONQ";
 
 // mac broker
-// const char* mqttServer = "192.168.1.111";
-// const int mqttPort = 1883;
-// const char* mqttUser = NULL;
-// const char* mqttPassword = NULL;
+const char* mqttServer = "192.168.1.121";
+const int mqttPort = 1883;
+const char* mqttUser = NULL;
+const char* mqttPassword = NULL;
 
 WiFiClient espKlant;
 PubSubClient client(espKlant);
