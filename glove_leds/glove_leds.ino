@@ -10,7 +10,7 @@ const char* ssid_list[] = { "HANDS", "CS-IoT", "Proximus-Home-827079", "iotd" };
 const char* password_list[] = { "95203737", "SLA-YTEdScs!", "homebase", "k?Uh6XrV" };
 const int num_networks = 4;
 
-///* shiftr broker
+/* shiftr broker
 const char* mqttServer = "algorithmicgaze.cloud.shiftr.io";
 const int mqttPort = 1883;
 const char* mqttUser = "algorithmicgaze";
@@ -18,8 +18,8 @@ const char* mqttPassword = "oyxIrENHt8mM2ONQ";
 //*/
 
 // mac broker
-/*
-const char* mqttServer = "192.168.1.111";
+///*
+const char* mqttServer = "192.168.1.121";
 const int mqttPort = 1883;
 const char* mqttUser = NULL;
 const char* mqttPassword = NULL;
