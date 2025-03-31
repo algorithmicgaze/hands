@@ -1,3 +1,6 @@
+// Code for the LED device
+// This device uses the NodeMCU-32S board
+
 #include <PubSubClient.h>
 #include <WiFi.h>
 #include <FastLED.h>
