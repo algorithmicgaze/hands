@@ -3,7 +3,7 @@ const readline = require("readline");
 const dgram = require("node:dgram");
 const WebSocket = require("ws");
 const fs = require("fs");
-const LZ4 = require("lz4");
+const lz4js = require("lz4js");
 const protobuf = require("protobufjs");
 
 class MocapReader {
@@ -87,7 +87,7 @@ function startUDPListener(port, logFile) {
   });
 
   server.on("message", (data, rinfo) => {
-    const decodedBlock = LZ4.decode(data);
+    const decodedBlock = Buffer.from(lz4js.decompress(data));
     const blockString = decodedBlock.toString("utf-8");
     const jsonData = JSON.parse(blockString);
 
