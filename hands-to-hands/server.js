@@ -49,6 +49,7 @@ const DEFAULT_CONFIG = {
   },
   smoothing: 0.25,
   releaseRatio: 0.65,
+  releaseMs: 120,
   minPublishIntervalMs: 20,
   oscFingerRegex: "^/(?:hands|rokoko)/(left|right)/(thumb|index|middle|ring|pinky)(?:/.*)?$",
 };
@@ -86,11 +87,13 @@ const state = {
     inputScales: { ...config.inputScales },
     smoothing: config.smoothing,
     releaseRatio: config.releaseRatio,
+    releaseMs: config.releaseMs,
   },
   rawVectors: Object.fromEntries(ORDERED_CHANNELS.map((channel) => [channel, null])),
   values: Object.fromEntries(ORDERED_CHANNELS.map((channel) => [channel, 0])),
   smoothed: Object.fromEntries(ORDERED_CHANNELS.map((channel) => [channel, 0])),
   active: Object.fromEntries(ORDERED_CHANNELS.map((channel) => [channel, false])),
+  activeUntil: Object.fromEntries(ORDERED_CHANNELS.map((channel) => [channel, 0])),
   pose: {},
   lastOscAt: null,
   lastPublishedAt: null,
@@ -102,6 +105,7 @@ const state = {
 const clients = new Set();
 const fingerRegex = new RegExp(config.oscFingerRegex, "i");
 let lastPublishMs = 0;
+const releaseTimers = Object.fromEntries(ORDERED_CHANNELS.map((channel) => [channel, null]));
 
 function patternFromActive(active) {
   return ORDERED_CHANNELS.map((channel) => (active[channel] ? "1" : "0")).join("");
@@ -179,6 +183,24 @@ function publishPattern(force = false) {
   broadcast({ type: "pattern", pattern, active: state.active, lastPublishedAt: state.lastPublishedAt });
 }
 
+function scheduleReleaseCheck(channel, delayMs) {
+  clearTimeout(releaseTimers[channel]);
+  releaseTimers[channel] = setTimeout(() => {
+    if (Date.now() < state.activeUntil[channel]) {
+      scheduleReleaseCheck(channel, state.activeUntil[channel] - Date.now());
+      return;
+    }
+    const thresholdScale = Math.max(0.01, Number(state.controls.thresholdScale) || 1);
+    const threshold = Number(state.controls.thresholds[channel] ?? 0) * thresholdScale;
+    const releaseThreshold = threshold * Number(state.controls.releaseRatio);
+    if (state.active[channel] && state.smoothed[channel] < releaseThreshold) {
+      state.active[channel] = false;
+      publishPattern();
+      broadcast({ type: "pattern", pattern: state.publishedPattern, active: state.active, lastPublishedAt: state.lastPublishedAt });
+    }
+  }, Math.max(1, delayMs));
+}
+
 function applyFingerValue(channel, rawValue) {
   const smoothing = Math.max(0, Math.min(0.95, Number(state.controls.smoothing)));
   const previous = state.smoothed[channel] || 0;
@@ -186,10 +208,18 @@ function applyFingerValue(channel, rawValue) {
   const thresholdScale = Math.max(0.01, Number(state.controls.thresholdScale) || 1);
   const threshold = Number(state.controls.thresholds[channel] ?? 0) * thresholdScale;
   const releaseThreshold = threshold * Number(state.controls.releaseRatio);
+  const releaseMs = Math.max(0, Number(state.controls.releaseMs) || 0);
+  const now = Date.now();
+  const triggered = smoothed >= threshold;
+  const heldByHysteresis = state.active[channel] && smoothed >= releaseThreshold;
 
   state.values[channel] = rawValue;
   state.smoothed[channel] = smoothed;
-  state.active[channel] = state.active[channel] ? smoothed >= releaseThreshold : smoothed >= threshold;
+  if (triggered) {
+    state.activeUntil[channel] = now + releaseMs;
+    if (releaseMs > 0) scheduleReleaseCheck(channel, releaseMs);
+  }
+  state.active[channel] = triggered || heldByHysteresis || now < state.activeUntil[channel];
 }
 
 function handleOscMessage(message) {
@@ -271,6 +301,8 @@ function resetTransientFingerState() {
     state.values[channel] = 0;
     state.smoothed[channel] = 0;
     state.active[channel] = false;
+    state.activeUntil[channel] = 0;
+    clearTimeout(releaseTimers[channel]);
   }
   state.publishedPattern = "0000000000";
   publishPattern(true);
@@ -299,6 +331,7 @@ function handleControlMessage(message) {
       }
     }
     if (message.releaseRatio !== undefined) state.controls.releaseRatio = Number(message.releaseRatio);
+    if (message.releaseMs !== undefined) state.controls.releaseMs = Number(message.releaseMs);
     publishPattern(true);
   }
   broadcast({ type: "controls", controls: state.controls });

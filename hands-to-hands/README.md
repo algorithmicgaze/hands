@@ -39,7 +39,7 @@ node server.js --config config.json
 node server.js --replay-fbx ../realtime/demo_data/hands-3-playing-minimal.fbx --replay-fps 30
 ```
 
-The UI shows exact finger thresholds, global sensitivity, source gains, smoothing, and release values as JSON so they can be copied into a config file once calibrated. Sensitivity is logarithmic: higher values make all fingers easier to trigger, lower values make regular movement quieter. The exported `thresholdScale` is the compatible internal inverse of sensitivity.
+The UI shows exact finger thresholds, global sensitivity, source gains, smoothing, release, and hysteresis values as JSON so they can be copied into a config file once calibrated. Sensitivity is logarithmic: higher values make all fingers easier to trigger, lower values make regular movement quieter. Release is a timed haptic hold in milliseconds after a trigger, like the release stage of an envelope. Hysteresis is the lower threshold ratio used to avoid chatter once a finger is active. The exported `thresholdScale` is the compatible internal inverse of sensitivity.
 
 `inputScales.osc` and `inputScales.fbxReplay` are source gains that normalize different incoming data shapes into the same internal "finger movement amount" before thresholding. FBX replay uses per-joint quaternion-angle deltas. OSC uses quaternion angular delta when four numeric args look like a unit quaternion, otherwise it uses scalar/vector delta.
 

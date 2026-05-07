@@ -34,6 +34,7 @@ const state = {
   },
   smoothing: 0.25,
   releaseRatio: 0.65,
+  releaseMs: 120,
   oscMessages: 0,
   lastOscAt: null,
   pose: {},
@@ -193,7 +194,12 @@ function createPanel() {
       <input id="smoothingNumber" type="number" min="0" max="0.95" step="0.01">
     </div>
     <div class="control-row">
-      <label for="releaseRatio">Release</label>
+      <label for="releaseMs">Release</label>
+      <input id="releaseMs" type="range" min="0" max="2000" step="10">
+      <input id="releaseMsNumber" type="number" min="0" max="2000" step="10">
+    </div>
+    <div class="control-row">
+      <label for="releaseRatio">Hysteresis</label>
       <input id="releaseRatio" type="range" min="0.1" max="0.95" step="0.01">
       <input id="releaseRatioNumber" type="number" min="0.1" max="0.95" step="0.01">
     </div>
@@ -248,6 +254,7 @@ function sendControls() {
     inputScales: state.inputScales,
     smoothing: state.smoothing,
     releaseRatio: state.releaseRatio,
+    releaseMs: state.releaseMs,
   }));
 }
 
@@ -332,6 +339,12 @@ bindRangePair(
   (value) => { state.smoothing = value; },
 );
 bindRangePair(
+  panel.querySelector("#releaseMs"),
+  panel.querySelector("#releaseMsNumber"),
+  () => state.releaseMs,
+  (value) => { state.releaseMs = value; },
+);
+bindRangePair(
   panel.querySelector("#releaseRatio"),
   panel.querySelector("#releaseRatioNumber"),
   () => state.releaseRatio,
@@ -368,6 +381,7 @@ function calibrationJson() {
     ])),
     smoothing: state.smoothing,
     releaseRatio: state.releaseRatio,
+    releaseMs: state.releaseMs,
   }, null, 2);
 }
 
@@ -401,6 +415,8 @@ function updateUi() {
   panel.querySelector("#oscScaleNumber").value = Number(state.inputScales.osc).toFixed(3);
   panel.querySelector("#fbxScale").value = state.inputScales.fbxReplay;
   panel.querySelector("#fbxScaleNumber").value = Number(state.inputScales.fbxReplay).toFixed(3);
+  panel.querySelector("#releaseMs").value = state.releaseMs;
+  panel.querySelector("#releaseMsNumber").value = Number(state.releaseMs).toFixed(0);
   panel.querySelector("#releaseRatio").value = state.releaseRatio;
   panel.querySelector("#releaseRatioNumber").value = Number(state.releaseRatio).toFixed(3);
 
@@ -466,6 +482,7 @@ function connectWebSocket() {
         inputScales: message.state.controls.inputScales,
         smoothing: message.state.controls.smoothing,
         releaseRatio: message.state.controls.releaseRatio,
+        releaseMs: message.state.controls.releaseMs,
         pattern: message.state.publishedPattern,
         values: message.state.values,
         smoothed: message.state.smoothed,
@@ -495,6 +512,7 @@ function connectWebSocket() {
       state.inputScales = message.controls.inputScales;
       state.smoothing = message.controls.smoothing;
       state.releaseRatio = message.controls.releaseRatio;
+      state.releaseMs = message.controls.releaseMs ?? state.releaseMs;
     }
     if (message.type === "status") {
       if (message.mqttConnected !== undefined) state.mqttConnected = message.mqttConnected;
