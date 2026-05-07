@@ -442,6 +442,7 @@ async function startFbxReplay(filename, fps = 30) {
       index = 0;
       loop += 1;
       resetTransientFingerState();
+      console.log(`FBX replay restarted loop ${loop}`);
       broadcast({ type: "replay-loop", loop });
     }
   }, frameDelayMs);
