@@ -123,10 +123,14 @@ const palms = Object.fromEntries(HANDS.map((hand) => [hand, makePalm(hand)]));
 
 function makeFinger(hand, finger, index) {
   const thumbSign = hand === "left" ? 1 : -1;
+  // Four fingers fan opposite to the thumb so each hand stays anatomically mirrored.
+  const fingerSign = -thumbSign;
   const root = new THREE.Group();
-  const spread = (index - 2) * 0.09;
+  // Centre the four non-thumb fingers (index..pinky) on the palm: indices 1..4 → -1.5..+1.5 → -0.24..+0.24.
+  const fingerOffset = (index - 2.5) * 0.16 * fingerSign;
+  const spread = (index - 2.5) * 0.09 * fingerSign;
   const isThumb = finger === "thumb";
-  const x = isThumb ? thumbSign * 0.43 : (index - 2) * 0.16;
+  const x = isThumb ? thumbSign * 0.43 : fingerOffset;
   root.position.set(x, isThumb ? -0.08 : 0.22, isThumb ? 0.16 : 0.02);
   root.rotation.z = isThumb ? -thumbSign * 0.95 : -spread;
   root.rotation.y = isThumb ? -thumbSign * 0.45 : 0;
