@@ -4,6 +4,8 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 const FINGERS = ["thumb", "index", "middle", "ring", "pinky"];
 const HANDS = ["left", "right"];
 const CHANNELS = HANDS.flatMap((hand) => FINGERS.map((finger) => `${hand}.${finger}`));
+const MIN_SENSITIVITY = 0.025;
+const MAX_SENSITIVITY = 8;
 
 const state = {
   connected: false,
@@ -14,16 +16,16 @@ const state = {
   smoothed: Object.fromEntries(CHANNELS.map((channel) => [channel, 0])),
   active: Object.fromEntries(CHANNELS.map((channel) => [channel, false])),
   thresholds: {
-    "left.thumb": 0.0025,
-    "left.index": 0.007,
-    "left.middle": 0.016,
-    "left.ring": 0.023,
-    "left.pinky": 0.012,
-    "right.thumb": 0.006,
-    "right.index": 0.015,
-    "right.middle": 0.014,
-    "right.ring": 0.013,
-    "right.pinky": 0.012,
+    "left.thumb": 0.01314,
+    "left.index": 0.03848,
+    "left.middle": 0.08381,
+    "left.ring": 0.09359,
+    "left.pinky": 0.05753,
+    "right.thumb": 0.06367,
+    "right.index": 0.07214,
+    "right.middle": 0.09818,
+    "right.ring": 0.10555,
+    "right.pinky": 0.08695,
   },
   thresholdScale: 1,
   inputScales: {
@@ -171,17 +173,17 @@ function createPanel() {
       <div class="metric"><span>Pattern</span><strong id="pattern">0000000000</strong></div>
     </div>
     <div class="control-row">
-      <label for="thresholdScale">Scale</label>
-      <input id="thresholdScale" type="range" min="0.25" max="4" step="0.01">
-      <input id="thresholdScaleNumber" type="number" min="0.25" max="4" step="0.01">
+      <label for="sensitivity">Sensitivity</label>
+      <input id="sensitivity" type="range" min="0" max="100" step="0.1">
+      <input id="sensitivityNumber" type="number" min="0.025" max="8" step="0.001">
     </div>
     <div class="control-row">
-      <label for="oscScale">OSC scale</label>
+      <label for="oscScale">OSC gain</label>
       <input id="oscScale" type="range" min="0.05" max="20" step="0.05">
       <input id="oscScaleNumber" type="number" min="0.05" max="20" step="0.05">
     </div>
     <div class="control-row">
-      <label for="fbxScale">FBX scale</label>
+      <label for="fbxScale">FBX gain</label>
       <input id="fbxScale" type="range" min="0.05" max="20" step="0.05">
       <input id="fbxScaleNumber" type="number" min="0.05" max="20" step="0.05">
     </div>
@@ -223,8 +225,8 @@ function createPanel() {
       row.className = "finger-row";
       row.innerHTML = `
         <div class="finger-name">${finger}<span class="bit" data-bit="${channel}">0</span></div>
-        <input data-threshold="${channel}" type="range" min="0" max="0.08" step="0.0005">
-        <input data-threshold-number="${channel}" type="number" min="0" max="0.08" step="0.0005">
+        <input data-threshold="${channel}" type="range" min="0" max="0.5" step="0.0005">
+        <input data-threshold-number="${channel}" type="number" min="0" max="0.5" step="0.0005">
       `;
       settings.appendChild(row);
     }
@@ -266,12 +268,51 @@ function bindRangePair(range, number, getter, setter) {
   number.addEventListener("input", () => update(number.value));
 }
 
-bindRangePair(
-  panel.querySelector("#thresholdScale"),
-  panel.querySelector("#thresholdScaleNumber"),
-  () => state.thresholdScale,
-  (value) => { state.thresholdScale = value; },
-);
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function sensitivityFromThresholdScale(thresholdScale) {
+  return clamp(1 / Math.max(0.001, Number(thresholdScale) || 1), MIN_SENSITIVITY, MAX_SENSITIVITY);
+}
+
+function thresholdScaleFromSensitivity(sensitivity) {
+  return 1 / clamp(Number(sensitivity) || 1, MIN_SENSITIVITY, MAX_SENSITIVITY);
+}
+
+function sliderValueFromSensitivity(sensitivity) {
+  const minLog = Math.log10(MIN_SENSITIVITY);
+  const maxLog = Math.log10(MAX_SENSITIVITY);
+  const valueLog = Math.log10(clamp(sensitivity, MIN_SENSITIVITY, MAX_SENSITIVITY));
+  return ((valueLog - minLog) / (maxLog - minLog)) * 100;
+}
+
+function sensitivityFromSliderValue(value) {
+  const minLog = Math.log10(MIN_SENSITIVITY);
+  const maxLog = Math.log10(MAX_SENSITIVITY);
+  return 10 ** (minLog + (Number(value) / 100) * (maxLog - minLog));
+}
+
+function updateSensitivityControls() {
+  const sensitivity = sensitivityFromThresholdScale(state.thresholdScale);
+  panel.querySelector("#sensitivity").value = sliderValueFromSensitivity(sensitivity);
+  panel.querySelector("#sensitivityNumber").value = sensitivity.toFixed(3);
+}
+
+function bindSensitivityControls() {
+  const range = panel.querySelector("#sensitivity");
+  const number = panel.querySelector("#sensitivityNumber");
+  const update = (sensitivity) => {
+    state.thresholdScale = thresholdScaleFromSensitivity(sensitivity);
+    updateSensitivityControls();
+    scheduleSendControls();
+    updateUi();
+  };
+  range.addEventListener("input", () => update(sensitivityFromSliderValue(range.value)));
+  number.addEventListener("input", () => update(number.value));
+}
+
+bindSensitivityControls();
 bindRangePair(
   panel.querySelector("#oscScale"),
   panel.querySelector("#oscScaleNumber"),
@@ -315,8 +356,10 @@ panel.querySelector("#enabled").addEventListener("click", () => {
 });
 
 function calibrationJson() {
+  const sensitivity = sensitivityFromThresholdScale(state.thresholdScale);
   return JSON.stringify({
     thresholds: state.thresholds,
+    sensitivity: Number(sensitivity.toFixed(5)),
     thresholdScale: state.thresholdScale,
     inputScales: state.inputScales,
     effectiveThresholds: Object.fromEntries(CHANNELS.map((channel) => [
@@ -353,8 +396,7 @@ function updateUi() {
 
   panel.querySelector("#smoothing").value = state.smoothing;
   panel.querySelector("#smoothingNumber").value = Number(state.smoothing).toFixed(3);
-  panel.querySelector("#thresholdScale").value = state.thresholdScale;
-  panel.querySelector("#thresholdScaleNumber").value = Number(state.thresholdScale).toFixed(3);
+  updateSensitivityControls();
   panel.querySelector("#oscScale").value = state.inputScales.osc;
   panel.querySelector("#oscScaleNumber").value = Number(state.inputScales.osc).toFixed(3);
   panel.querySelector("#fbxScale").value = state.inputScales.fbxReplay;

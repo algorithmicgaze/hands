@@ -39,11 +39,11 @@ node server.js --config config.json
 node server.js --replay-fbx ../realtime/demo_data/hands-3-playing-minimal.fbx --replay-fps 30
 ```
 
-The UI shows exact threshold, global threshold scale, source input scales, smoothing, and release values as JSON so they can be copied into a config file once calibrated. `thresholdScale` defaults to `1`; lower values make all fingers more sensitive, higher values make all fingers less sensitive.
+The UI shows exact finger thresholds, global sensitivity, source gains, smoothing, and release values as JSON so they can be copied into a config file once calibrated. Sensitivity is logarithmic: higher values make all fingers easier to trigger, lower values make regular movement quieter. The exported `thresholdScale` is the compatible internal inverse of sensitivity.
 
-`inputScales.osc` and `inputScales.fbxReplay` normalize different incoming data shapes into the same internal "finger movement amount" before thresholding. FBX replay uses per-joint quaternion-angle deltas. OSC uses quaternion angular delta when four numeric args look like a unit quaternion, otherwise it uses scalar/vector delta.
+`inputScales.osc` and `inputScales.fbxReplay` are source gains that normalize different incoming data shapes into the same internal "finger movement amount" before thresholding. FBX replay uses per-joint quaternion-angle deltas. OSC uses quaternion angular delta when four numeric args look like a unit quaternion, otherwise it uses scalar/vector delta.
 
-The built-in defaults come from the FBX calibration clips in `../realtime/demo_data`. The metric is summed per-frame quaternion-angle movement across the joints of each finger, so thresholds respond to motion rather than static hand pose.
+The built-in defaults come from the FBX calibration clips in `../realtime/demo_data`. `hands-4-minimal.fbx` and `hands-5-nomovement.fbx` set the lower bound, `hands-2-playing.fbx` sets the regular playing range, and `hands-1-exaggerated.fbx` caps the upper bound. The metric is summed per-frame quaternion-angle movement across the joints of each finger, so thresholds respond to motion rather than static hand pose.
 
 To regenerate the calibration report:
 

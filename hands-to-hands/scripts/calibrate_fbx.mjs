@@ -68,6 +68,7 @@ function movementStatsForClip(filename) {
         p99: round(percentile(values, 0.99)),
         p95: round(percentile(values, 0.95)),
         p90: round(percentile(values, 0.90)),
+        p75: round(percentile(values, 0.75)),
         median: round(percentile(values, 0.50)),
       };
     }
@@ -77,12 +78,15 @@ function movementStatsForClip(filename) {
 
 function recommendThresholds(report) {
   const thresholds = {};
-  for (const channel of Object.keys(report["hands-3-playing-minimal.fbx"])) {
+  for (const channel of Object.keys(report["hands-2-playing.fbx"])) {
+    const exaggerated = report["hands-1-exaggerated.fbx"][channel];
+    const regularPlaying = report["hands-2-playing.fbx"][channel];
+    const minimal = report["hands-4-minimal.fbx"][channel];
     const noMovement = report["hands-5-nomovement.fbx"][channel];
-    const playingMinimal = report["hands-3-playing-minimal.fbx"][channel];
-    const noiseFloor = noMovement.p99 * 1.75;
-    const catchMinimalPlaying = playingMinimal.p90 * 0.8;
-    thresholds[channel] = round(Math.max(noiseFloor, catchMinimalPlaying));
+    const lowerBound = Math.max(noMovement.p99 * 1.75, minimal.p90 * 1.1);
+    const regularRange = regularPlaying.p75;
+    const upperBound = exaggerated.median * 0.9;
+    thresholds[channel] = round(Math.min(Math.max(regularRange, lowerBound), upperBound));
   }
   return thresholds;
 }
