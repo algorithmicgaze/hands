@@ -87,6 +87,26 @@
       text-overflow: ellipsis;
     }
 
+    #pattern {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .pattern-bit {
+      display: inline-block;
+      width: 1ch;
+      text-align: center;
+    }
+
+    .pattern-bit[data-bit="1"] {
+      color: #41f28e;
+      text-shadow: 0 0 8px rgba(65, 242, 142, 0.5);
+    }
+
+    .pattern-bit[data-bit="0"] {
+      color: rgba(243, 240, 232, 0.38);
+    }
+
     button {
       border: 1px solid rgba(255, 255, 255, 0.18);
       border-radius: 6px;

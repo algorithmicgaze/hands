@@ -122,14 +122,14 @@ function makePalm(hand) {
 const palms = Object.fromEntries(HANDS.map((hand) => [hand, makePalm(hand)]));
 
 function makeFinger(hand, finger, index) {
-  const xSign = hand === "left" ? -1 : 1;
+  const thumbSign = hand === "left" ? 1 : -1;
   const root = new THREE.Group();
   const spread = (index - 2) * 0.09;
-  const x = (index - 2) * 0.16;
   const isThumb = finger === "thumb";
-  root.position.set(isThumb ? xSign * 0.43 : x, isThumb ? -0.08 : 0.22, isThumb ? 0.16 : 0.02);
-  root.rotation.z = isThumb ? -xSign * 0.95 : -spread;
-  root.rotation.y = isThumb ? -xSign * 0.45 : 0;
+  const x = isThumb ? thumbSign * 0.43 : (index - 2) * 0.16;
+  root.position.set(x, isThumb ? -0.08 : 0.22, isThumb ? 0.16 : 0.02);
+  root.rotation.z = isThumb ? -thumbSign * 0.95 : -spread;
+  root.rotation.y = isThumb ? -thumbSign * 0.45 : 0;
   root.rotation.x = isThumb ? -0.1 : 0;
 
   const lengths = isThumb ? [0.22, 0.18, 0.14] : [0.34, 0.25, 0.19];
@@ -400,10 +400,24 @@ panel.querySelector("#copyJson").addEventListener("click", () => {
   });
 });
 
+function updatePatternDisplay(pattern) {
+  const patternEl = panel.querySelector("#pattern");
+  patternEl.replaceChildren(
+    ...pattern.split("").map((bit) => {
+      const span = document.createElement("span");
+      span.className = "pattern-bit";
+      span.dataset.bit = bit;
+      span.textContent = bit;
+      return span;
+    }),
+  );
+  patternEl.setAttribute("aria-label", pattern);
+}
+
 function updateUi() {
   panel.querySelector("#oscStatus").textContent = state.lastOscAt ? `${state.oscMessages} msgs` : "waiting";
   panel.querySelector("#mqttStatus").textContent = state.mqttConnected ? "connected" : "offline";
-  panel.querySelector("#pattern").textContent = state.pattern;
+  updatePatternDisplay(state.pattern);
   const enabledButton = panel.querySelector("#enabled");
   enabledButton.textContent = state.enabled ? "Sending" : "Muted";
   enabledButton.setAttribute("aria-pressed", String(state.enabled));
