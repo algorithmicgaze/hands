@@ -137,11 +137,53 @@
       border-top: 1px solid rgba(255, 255, 255, 0.11);
     }
 
-    .hand h2 {
-      margin: 0 0 6px;
+    .hand summary {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      cursor: pointer;
+      list-style: none;
+    }
+
+    .hand summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .hand-title {
       font-size: 13px;
       color: #aaa69d;
       text-transform: uppercase;
+      font-weight: 700;
+    }
+
+    .dot-row {
+      display: grid;
+      grid-template-columns: repeat(5, 34px);
+      gap: 8px;
+      align-items: center;
+      justify-content: end;
+    }
+
+    .summary-dot {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.08);
+      color: #8d8980;
+      font: 700 16px ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .summary-dot.on {
+      background: #48d597;
+      color: #07150d;
+    }
+
+    .finger-settings {
+      margin-top: 8px;
     }
 
     .finger-name {
@@ -167,14 +209,33 @@
       color: #07150d;
     }
 
-    pre {
-      margin: 12px 0 0;
-      padding: 10px;
-      overflow: auto;
-      border-radius: 6px;
-      background: rgba(0, 0, 0, 0.28);
-      color: #e7d56b;
-      font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
+    .copy-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      gap: 8px;
+      margin: 8px 0 0;
+      padding-top: 8px;
+      border-top: 1px solid rgba(255, 255, 255, 0.11);
+    }
+
+    .copy-status {
+      color: #aaa69d;
+      font-size: 11px;
+    }
+
+    .copy-button {
+      padding: 4px 7px;
+      border-color: rgba(255, 255, 255, 0.12);
+      background: rgba(255, 255, 255, 0.035);
+      color: #aaa69d;
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .copy-button:hover {
+      border-color: rgba(255, 255, 255, 0.22);
+      color: #f3f0e8;
     }
 
     @media (max-width: 620px) {

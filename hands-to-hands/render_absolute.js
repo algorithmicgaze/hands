@@ -26,6 +26,10 @@ const state = {
     "right.pinky": 0.012,
   },
   thresholdScale: 1,
+  inputScales: {
+    osc: 1,
+    fbxReplay: 1,
+  },
   smoothing: 0.25,
   releaseRatio: 0.65,
   oscMessages: 0,
@@ -58,21 +62,54 @@ grid.position.y = -1.3;
 scene.add(grid);
 
 const fingerRigs = new Map();
-const baseMaterial = new THREE.MeshStandardMaterial({ color: 0x3a3d3b, roughness: 0.62, metalness: 0.08 });
-const activeMaterial = new THREE.MeshStandardMaterial({ color: 0x48d597, roughness: 0.42, metalness: 0.18 });
-const palmMaterial = new THREE.MeshStandardMaterial({ color: 0x2f3331, roughness: 0.7, metalness: 0.04 });
+const inactiveMaterial = new THREE.MeshStandardMaterial({ color: 0x7d8178, roughness: 0.68, metalness: 0.02 });
+const activeMaterial = new THREE.MeshStandardMaterial({
+  color: 0x41f28e,
+  emissive: 0x16884d,
+  emissiveIntensity: 0.55,
+  roughness: 0.38,
+  metalness: 0.04,
+});
+const jointMaterial = new THREE.MeshStandardMaterial({ color: 0x222725, roughness: 0.7, metalness: 0.02 });
+const palmMaterial = new THREE.MeshStandardMaterial({ color: 0x303630, roughness: 0.72, metalness: 0.04 });
+
+function makeCapsule(length, radius, material) {
+  const group = new THREE.Group();
+  const cylinder = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, length, 18), material);
+  cylinder.position.y = length / 2;
+  group.add(cylinder);
+
+  const capGeometry = new THREE.SphereGeometry(radius, 18, 10);
+  const baseCap = new THREE.Mesh(capGeometry, material);
+  baseCap.position.y = 0;
+  group.add(baseCap);
+
+  const tipCap = new THREE.Mesh(capGeometry, material);
+  tipCap.position.y = length;
+  group.add(tipCap);
+  group.userData.parts = [cylinder, baseCap, tipCap];
+  return group;
+}
 
 function makePalm(hand) {
   const group = new THREE.Group();
-  group.position.set(hand === "left" ? -1.25 : 1.25, -0.9, 0);
-  group.rotation.z = hand === "left" ? -0.13 : 0.13;
+  group.position.set(hand === "left" ? -1.05 : 1.05, -0.85, 0);
+  group.rotation.z = hand === "left" ? -0.1 : 0.1;
 
-  const palm = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.52, 0.18), palmMaterial);
-  palm.position.y = -0.08;
+  const palm = new THREE.Mesh(new THREE.BoxGeometry(0.78, 0.56, 0.22), palmMaterial);
+  palm.position.y = -0.1;
   group.add(palm);
 
-  const wrist = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.28, 0.16), palmMaterial);
-  wrist.position.y = -0.44;
+  const knuckleGeometry = new THREE.SphereGeometry(0.045, 16, 8);
+  for (let i = 0; i < 4; i += 1) {
+    const knuckle = new THREE.Mesh(knuckleGeometry, jointMaterial);
+    knuckle.position.set((i - 1.5) * 0.16, 0.18, 0.025);
+    knuckle.scale.set(1.25, 0.45, 0.8);
+    group.add(knuckle);
+  }
+
+  const wrist = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.26, 0.18), palmMaterial);
+  wrist.position.y = -0.48;
   group.add(wrist);
 
   scene.add(group);
@@ -84,14 +121,16 @@ const palms = Object.fromEntries(HANDS.map((hand) => [hand, makePalm(hand)]));
 function makeFinger(hand, finger, index) {
   const xSign = hand === "left" ? -1 : 1;
   const root = new THREE.Group();
-  const spread = (index - 2) * 0.12;
+  const spread = (index - 2) * 0.09;
   const x = (index - 2) * 0.16;
   const isThumb = finger === "thumb";
-  root.position.set(isThumb ? xSign * 0.43 : x, isThumb ? -0.22 : 0.2, isThumb ? 0.06 : 0);
-  root.rotation.z = isThumb ? xSign * 0.95 : -spread;
-  root.rotation.y = isThumb ? xSign * 0.35 : 0;
+  root.position.set(isThumb ? xSign * 0.43 : x, isThumb ? -0.08 : 0.22, isThumb ? 0.16 : 0.02);
+  root.rotation.z = isThumb ? -xSign * 0.95 : -spread;
+  root.rotation.y = isThumb ? -xSign * 0.45 : 0;
+  root.rotation.x = isThumb ? -0.1 : 0;
 
-  const lengths = isThumb ? [0.24, 0.22, 0.18] : [0.34, 0.27, 0.2];
+  const lengths = isThumb ? [0.22, 0.18, 0.14] : [0.34, 0.25, 0.19];
+  const radius = isThumb ? 0.055 : 0.05;
   const segments = [];
   const joints = [];
   let parent = root;
@@ -101,15 +140,17 @@ function makeFinger(hand, finger, index) {
     parent.add(joint);
     joints.push(joint);
 
-    const segment = new THREE.Mesh(new THREE.BoxGeometry(0.1, lengths[i], 0.1), baseMaterial);
-    segment.position.y = lengths[i] / 2;
+    const jointMarker = new THREE.Mesh(new THREE.SphereGeometry(radius * 1.18, 16, 10), jointMaterial);
+    joint.add(jointMarker);
+
+    const segment = makeCapsule(lengths[i], radius, inactiveMaterial);
     joint.add(segment);
     segments.push(segment);
     parent = joint;
   }
 
   palms[hand].add(root);
-  fingerRigs.set(`${hand}.${finger}`, { root, joints, segments });
+  fingerRigs.set(`${hand}.${finger}`, { hand, finger, root, restRotation: root.rotation.clone(), joints, segments });
 }
 
 for (const hand of HANDS) {
@@ -135,6 +176,16 @@ function createPanel() {
       <input id="thresholdScaleNumber" type="number" min="0.25" max="4" step="0.01">
     </div>
     <div class="control-row">
+      <label for="oscScale">OSC scale</label>
+      <input id="oscScale" type="range" min="0.05" max="20" step="0.05">
+      <input id="oscScaleNumber" type="number" min="0.05" max="20" step="0.05">
+    </div>
+    <div class="control-row">
+      <label for="fbxScale">FBX scale</label>
+      <input id="fbxScale" type="range" min="0.05" max="20" step="0.05">
+      <input id="fbxScaleNumber" type="number" min="0.05" max="20" step="0.05">
+    </div>
+    <div class="control-row">
       <label for="smoothing">Smoothing</label>
       <input id="smoothing" type="range" min="0" max="0.95" step="0.01">
       <input id="smoothingNumber" type="number" min="0" max="0.95" step="0.01">
@@ -145,15 +196,27 @@ function createPanel() {
       <input id="releaseRatioNumber" type="number" min="0.1" max="0.95" step="0.01">
     </div>
     <div id="fingerControls"></div>
-    <pre id="exactValues"></pre>
+    <div class="copy-row">
+      <span id="copyStatus" class="copy-status">Calibration JSON ready</span>
+      <button id="copyJson" class="copy-button" type="button">Copy</button>
+    </div>
   `;
   document.body.appendChild(panel);
 
   const fingerControls = panel.querySelector("#fingerControls");
   for (const hand of HANDS) {
-    const section = document.createElement("section");
+    const section = document.createElement("details");
     section.className = "hand";
-    section.innerHTML = `<h2>${hand} hand</h2>`;
+    section.innerHTML = `
+      <summary>
+        <span class="hand-title">${hand} hand</span>
+        <span class="dot-row" aria-label="${hand} hand bit state">
+          ${FINGERS.map((finger) => `<span class="summary-dot" data-summary-bit="${hand}.${finger}">0</span>`).join("")}
+        </span>
+      </summary>
+      <div class="finger-settings"></div>
+    `;
+    const settings = section.querySelector(".finger-settings");
     for (const finger of FINGERS) {
       const channel = `${hand}.${finger}`;
       const row = document.createElement("div");
@@ -163,7 +226,7 @@ function createPanel() {
         <input data-threshold="${channel}" type="range" min="0" max="0.08" step="0.0005">
         <input data-threshold-number="${channel}" type="number" min="0" max="0.08" step="0.0005">
       `;
-      section.appendChild(row);
+      settings.appendChild(row);
     }
     fingerControls.appendChild(section);
   }
@@ -180,6 +243,7 @@ function sendControls() {
     type: "set-controls",
     thresholds: state.thresholds,
     thresholdScale: state.thresholdScale,
+    inputScales: state.inputScales,
     smoothing: state.smoothing,
     releaseRatio: state.releaseRatio,
   }));
@@ -207,6 +271,18 @@ bindRangePair(
   panel.querySelector("#thresholdScaleNumber"),
   () => state.thresholdScale,
   (value) => { state.thresholdScale = value; },
+);
+bindRangePair(
+  panel.querySelector("#oscScale"),
+  panel.querySelector("#oscScaleNumber"),
+  () => state.inputScales.osc,
+  (value) => { state.inputScales.osc = value; },
+);
+bindRangePair(
+  panel.querySelector("#fbxScale"),
+  panel.querySelector("#fbxScaleNumber"),
+  () => state.inputScales.fbxReplay,
+  (value) => { state.inputScales.fbxReplay = value; },
 );
 bindRangePair(
   panel.querySelector("#smoothing"),
@@ -238,6 +314,35 @@ panel.querySelector("#enabled").addEventListener("click", () => {
   updateUi();
 });
 
+function calibrationJson() {
+  return JSON.stringify({
+    thresholds: state.thresholds,
+    thresholdScale: state.thresholdScale,
+    inputScales: state.inputScales,
+    effectiveThresholds: Object.fromEntries(CHANNELS.map((channel) => [
+      channel,
+      Number((state.thresholds[channel] * state.thresholdScale).toFixed(5)),
+    ])),
+    smoothing: state.smoothing,
+    releaseRatio: state.releaseRatio,
+  }, null, 2);
+}
+
+async function copyCalibrationJson() {
+  await navigator.clipboard.writeText(calibrationJson());
+  const status = panel.querySelector("#copyStatus");
+  status.textContent = "Copied calibration JSON";
+  setTimeout(() => {
+    status.textContent = "Calibration JSON ready";
+  }, 1400);
+}
+
+panel.querySelector("#copyJson").addEventListener("click", () => {
+  copyCalibrationJson().catch((error) => {
+    panel.querySelector("#copyStatus").textContent = `Copy failed: ${error.message}`;
+  });
+});
+
 function updateUi() {
   panel.querySelector("#oscStatus").textContent = state.lastOscAt ? `${state.oscMessages} msgs` : "waiting";
   panel.querySelector("#mqttStatus").textContent = state.mqttConnected ? "connected" : "offline";
@@ -250,6 +355,10 @@ function updateUi() {
   panel.querySelector("#smoothingNumber").value = Number(state.smoothing).toFixed(3);
   panel.querySelector("#thresholdScale").value = state.thresholdScale;
   panel.querySelector("#thresholdScaleNumber").value = Number(state.thresholdScale).toFixed(3);
+  panel.querySelector("#oscScale").value = state.inputScales.osc;
+  panel.querySelector("#oscScaleNumber").value = Number(state.inputScales.osc).toFixed(3);
+  panel.querySelector("#fbxScale").value = state.inputScales.fbxReplay;
+  panel.querySelector("#fbxScaleNumber").value = Number(state.inputScales.fbxReplay).toFixed(3);
   panel.querySelector("#releaseRatio").value = state.releaseRatio;
   panel.querySelector("#releaseRatioNumber").value = Number(state.releaseRatio).toFixed(3);
 
@@ -259,18 +368,12 @@ function updateUi() {
     const bit = panel.querySelector(`[data-bit="${channel}"]`);
     bit.textContent = state.active[channel] ? "1" : "0";
     bit.classList.toggle("on", Boolean(state.active[channel]));
+    const summaryBit = panel.querySelector(`[data-summary-bit="${channel}"]`);
+    summaryBit.textContent = state.active[channel] ? "1" : "0";
+    summaryBit.classList.toggle("on", Boolean(state.active[channel]));
   }
 
-  panel.querySelector("#exactValues").textContent = JSON.stringify({
-    thresholds: state.thresholds,
-    thresholdScale: state.thresholdScale,
-    effectiveThresholds: Object.fromEntries(CHANNELS.map((channel) => [
-      channel,
-      Number((state.thresholds[channel] * state.thresholdScale).toFixed(5)),
-    ])),
-    smoothing: state.smoothing,
-    releaseRatio: state.releaseRatio,
-  }, null, 2);
+  panel.querySelector("#copyStatus").textContent = "Calibration JSON ready";
 }
 
 function updateScene() {
@@ -278,14 +381,28 @@ function updateScene() {
     const rig = fingerRigs.get(channel);
     const effectiveThreshold = state.thresholds[channel] * state.thresholdScale;
     const amount = Math.min(1, state.smoothed[channel] / Math.max(0.001, effectiveThreshold));
-    const poseAngles = state.pose[channel];
+    const pose = state.pose[channel];
+    const poseAngles = Array.isArray(pose) ? pose : pose?.angles;
+    const poseQuaternions = pose?.quaternions;
     rig.segments.forEach((segment) => {
-      segment.material = state.active[channel] ? activeMaterial : baseMaterial;
+      const material = state.active[channel] ? activeMaterial : inactiveMaterial;
+      for (const part of segment.userData.parts || [segment]) {
+        part.material = material;
+      }
     });
     rig.joints.forEach((joint, index) => {
-      const poseAngle = Array.isArray(poseAngles) ? poseAngles[index] || 0 : amount * (0.65 - index * 0.12);
-      joint.rotation.x = -Math.min(1.35, poseAngle * 0.9);
-      joint.rotation.z = index === 0 ? joint.rotation.z : 0;
+      const quat = poseQuaternions?.[index];
+      if (rig.finger === "thumb") {
+        const poseAngle = Array.isArray(poseAngles) ? poseAngles[index] || 0 : amount * (0.6 - index * 0.12);
+        const curl = Math.min(0.85, poseAngle * 0.45 + amount * 0.2);
+        const opposition = index === 0 ? (rig.hand === "left" ? -0.2 : 0.2) : 0;
+        joint.rotation.set(-curl, opposition, 0);
+      } else if (quat) {
+        joint.quaternion.set(quat[0], quat[1], quat[2], quat[3]).normalize();
+      } else {
+        const poseAngle = Array.isArray(poseAngles) ? poseAngles[index] || 0 : amount * (0.65 - index * 0.12);
+        joint.rotation.set(-Math.min(1.35, poseAngle * 0.9), 0, 0);
+      }
     });
   }
 }
@@ -304,6 +421,7 @@ function connectWebSocket() {
         enabled: message.state.controls.enabled,
         thresholds: message.state.controls.thresholds,
         thresholdScale: message.state.controls.thresholdScale,
+        inputScales: message.state.controls.inputScales,
         smoothing: message.state.controls.smoothing,
         releaseRatio: message.state.controls.releaseRatio,
         pattern: message.state.publishedPattern,
@@ -332,6 +450,7 @@ function connectWebSocket() {
       state.enabled = message.controls.enabled;
       state.thresholds = message.controls.thresholds;
       state.thresholdScale = message.controls.thresholdScale;
+      state.inputScales = message.controls.inputScales;
       state.smoothing = message.controls.smoothing;
       state.releaseRatio = message.controls.releaseRatio;
     }

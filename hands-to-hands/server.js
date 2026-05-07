@@ -43,6 +43,10 @@ const DEFAULT_CONFIG = {
     "right.pinky": 0.012,
   },
   thresholdScale: 1,
+  inputScales: {
+    osc: 1,
+    fbxReplay: 1,
+  },
   smoothing: 0.25,
   releaseRatio: 0.65,
   minPublishIntervalMs: 20,
@@ -79,6 +83,7 @@ const state = {
     enabled: config.enabled,
     thresholds: { ...config.thresholds },
     thresholdScale: config.thresholdScale,
+    inputScales: { ...config.inputScales },
     smoothing: config.smoothing,
     releaseRatio: config.releaseRatio,
   },
@@ -114,8 +119,26 @@ function vectorFromOscArgs(args) {
   return values.slice(0, 4);
 }
 
+function looksLikeQuaternion(values) {
+  if (!values || values.length !== 4) return false;
+  const magnitude = Math.sqrt(values.reduce((sum, value) => sum + value * value, 0));
+  return magnitude > 0.8 && magnitude < 1.2;
+}
+
+function quaternionFromArray(values) {
+  return {
+    x: values[0] || 0,
+    y: values[1] || 0,
+    z: values[2] || 0,
+    w: values[3] ?? 1,
+  };
+}
+
 function movementAmount(previous, current) {
   if (!previous) return 0;
+  if (looksLikeQuaternion(previous) && looksLikeQuaternion(current)) {
+    return quaternionAngle(quaternionFromArray(previous), quaternionFromArray(current));
+  }
   const length = Math.max(previous.length, current.length);
   let sum = 0;
   for (let i = 0; i < length; i += 1) {
@@ -126,7 +149,14 @@ function movementAmount(previous, current) {
 }
 
 function quaternionAngle(a, b) {
-  return 2 * Math.acos(Math.min(1, Math.abs(a.dot(b))));
+  const dot = Math.abs((a.x || 0) * (b.x || 0) + (a.y || 0) * (b.y || 0) + (a.z || 0) * (b.z || 0) + (a.w || 0) * (b.w || 0));
+  return 2 * Math.acos(Math.min(1, dot));
+}
+
+function normalizeMovement(value, source) {
+  const key = source === "fbx-replay" ? "fbxReplay" : source;
+  const scale = Number(state.controls.inputScales[key] ?? 1);
+  return value * scale;
 }
 
 function broadcast(payload) {
@@ -174,7 +204,7 @@ function handleOscMessage(message) {
   const channel = `${hand}.${finger}`;
   const rawVector = vectorFromOscArgs(message.args);
   if (rawVector === null) return;
-  const value = movementAmount(state.rawVectors[channel], rawVector);
+  const value = normalizeMovement(movementAmount(state.rawVectors[channel], rawVector), "osc");
   state.rawVectors[channel] = rawVector;
 
   state.oscMessages += 1;
@@ -197,13 +227,14 @@ function handleOscMessage(message) {
 function handleFingerMovement(channel, value, source = "replay") {
   state.oscMessages += 1;
   state.lastOscAt = new Date().toISOString();
-  applyFingerValue(channel, value);
+  const normalizedValue = normalizeMovement(value, source);
+  applyFingerValue(channel, normalizedValue);
   publishPattern();
   broadcast({
     type: "frame",
     source,
     channel,
-    rawValue: value,
+    rawValue: normalizedValue,
     values: state.values,
     smoothed: state.smoothed,
     active: state.active,
@@ -218,7 +249,7 @@ function handleReplayFrame(frame) {
   state.lastOscAt = new Date().toISOString();
   state.pose = frame.pose;
   for (const [channel, value] of Object.entries(frame.movements)) {
-    applyFingerValue(channel, value);
+    applyFingerValue(channel, normalizeMovement(value, "fbx-replay"));
   }
   publishPattern();
   broadcast({
@@ -232,6 +263,17 @@ function handleReplayFrame(frame) {
     lastOscAt: state.lastOscAt,
     oscMessages: state.oscMessages,
   });
+}
+
+function resetTransientFingerState() {
+  for (const channel of ORDERED_CHANNELS) {
+    state.rawVectors[channel] = null;
+    state.values[channel] = 0;
+    state.smoothed[channel] = 0;
+    state.active[channel] = false;
+  }
+  state.publishedPattern = "0000000000";
+  publishPattern(true);
 }
 
 function handleControlMessage(message) {
@@ -249,6 +291,13 @@ function handleControlMessage(message) {
     }
     if (message.smoothing !== undefined) state.controls.smoothing = Number(message.smoothing);
     if (message.thresholdScale !== undefined) state.controls.thresholdScale = Number(message.thresholdScale);
+    if (message.inputScales) {
+      for (const source of Object.keys(state.controls.inputScales)) {
+        if (message.inputScales[source] !== undefined) {
+          state.controls.inputScales[source] = Number(message.inputScales[source]);
+        }
+      }
+    }
     if (message.releaseRatio !== undefined) state.controls.releaseRatio = Number(message.releaseRatio);
     publishPattern(true);
   }
@@ -312,6 +361,7 @@ async function loadFbxReplay(filename) {
         const key = String(frame);
         const replayFrame = replayByFrame.get(key) || { time, movements: {}, pose: {} };
         const jointAngles = [];
+        const jointQuaternions = [];
         const value = qTracks.reduce((sum, track, index) => {
           const values = track.values;
           const previous = new Quaternion(
@@ -327,10 +377,14 @@ async function loadFbxReplay(filename) {
             values[frame * 4 + 3],
           ).normalize();
           jointAngles.push(quaternionAngle(restPose[index], current));
+          jointQuaternions.push([current.x, current.y, current.z, current.w]);
           return sum + quaternionAngle(previous, current);
         }, 0);
         replayFrame.movements[channel] = value;
-        replayFrame.pose[channel] = jointAngles;
+        replayFrame.pose[channel] = {
+          angles: jointAngles,
+          quaternions: jointQuaternions,
+        };
         replayByFrame.set(key, replayFrame);
       }
     }
@@ -346,10 +400,17 @@ async function startFbxReplay(filename, fps = 30) {
   const frameDelayMs = 1000 / fps;
   console.log(`Replaying ${replayFrames.length} FBX pose frames from ${filename} at ${fps} fps`);
   let index = 0;
+  let loop = 0;
   setInterval(() => {
     const frame = replayFrames[index];
     handleReplayFrame(frame);
-    index = (index + 1) % replayFrames.length;
+    index += 1;
+    if (index >= replayFrames.length) {
+      index = 0;
+      loop += 1;
+      resetTransientFingerState();
+      broadcast({ type: "replay-loop", loop });
+    }
   }, frameDelayMs);
 }
 
