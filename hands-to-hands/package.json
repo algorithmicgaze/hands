@@ -1,0 +1,21 @@
+{
+  "name": "hands-to-hands",
+  "version": "1.0.0",
+  "description": "Map Rokoko glove OSC input to haptic hand MQTT output.",
+  "main": "server.js",
+  "scripts": {
+    "calibrate": "node scripts/calibrate_fbx.mjs",
+    "smoke": "node scripts/smoke.mjs",
+    "start": "node server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "arg": "^5.0.2",
+    "mqtt": "^5.15.1",
+    "osc": "^2.4.5",
+    "three": "^0.184.0",
+    "ws": "^8.11.0"
+  }
+}
