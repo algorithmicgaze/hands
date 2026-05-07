@@ -1,7 +1,9 @@
 const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
+const dgram = require("node:dgram");
 const arg = require("arg");
+const lz4js = require("lz4js");
 const mqtt = require("mqtt");
 const osc = require("osc");
 const WebSocket = require("ws");
@@ -46,6 +48,7 @@ const DEFAULT_CONFIG = {
   inputScales: {
     osc: 1,
     fbxReplay: 1,
+    rokoko: 1,
   },
   smoothing: 0.25,
   releaseRatio: 0.65,
@@ -59,6 +62,9 @@ const args = arg({
   "--websocket-port": Number,
   "--osc-port": Number,
   "--osc-address": String,
+  "--rokoko-port": Number,
+  "--rokoko-address": String,
+  "--no-rokoko": Boolean,
   "--mqtt-url": String,
   "--mqtt-topic": String,
   "--replay-fbx": String,
@@ -106,6 +112,18 @@ const clients = new Set();
 const fingerRegex = new RegExp(config.oscFingerRegex, "i");
 let lastPublishMs = 0;
 const releaseTimers = Object.fromEntries(ORDERED_CHANNELS.map((channel) => [channel, null]));
+
+// Rokoko JSON v3 (LZ4) state. We re-derive the same per-finger summed
+// quaternion-angle delta the FBX calibration uses, so the existing thresholds
+// in DEFAULT_CONFIG.thresholds carry over with no retuning.
+// Joints used: Proximal, Medial, Distal — Rokoko provides Medial for the thumb
+// too, so we keep the joint list uniform across fingers. The Tip joint is
+// skipped because its rotation is downstream of the curl that drives the
+// haptic pattern.
+const ROKOKO_FINGER_NAMES = { thumb: "Thumb", index: "Index", middle: "Middle", ring: "Ring", pinky: "Little" };
+const ROKOKO_JOINTS = ["Proximal", "Medial", "Distal"];
+const rokokoLastQuats = Object.fromEntries(ORDERED_CHANNELS.map((channel) => [channel, null]));
+let rokokoPacketsReceived = 0;
 
 function patternFromActive(active) {
   return ORDERED_CHANNELS.map((channel) => (active[channel] ? "1" : "0")).join("");
@@ -302,10 +320,49 @@ function resetTransientFingerState() {
     state.smoothed[channel] = 0;
     state.active[channel] = false;
     state.activeUntil[channel] = 0;
+    rokokoLastQuats[channel] = null;
     clearTimeout(releaseTimers[channel]);
   }
   state.publishedPattern = "0000000000";
   publishPattern(true);
+}
+
+function handleRokokoPacket(data) {
+  let payload;
+  try {
+    payload = JSON.parse(Buffer.from(lz4js.decompress(data)).toString("utf-8"));
+  } catch (error) {
+    console.error("Rokoko packet decode error:", error.message);
+    return;
+  }
+  const body = payload?.scene?.actors?.[0]?.body;
+  if (!body) return;
+
+  if (rokokoPacketsReceived === 0) {
+    console.log("Rokoko JSON v3 stream live (gloves: " + (payload.scene.actors[0].meta?.hasGloves ? "yes" : "no") + ")");
+  }
+  rokokoPacketsReceived += 1;
+
+  for (const hand of HANDS) {
+    const handPrefix = hand === "left" ? "left" : "right";
+    for (const finger of FINGERS) {
+      const channel = `${hand}.${finger}`;
+      const fingerPrefix = ROKOKO_FINGER_NAMES[finger];
+      const currentQuats = ROKOKO_JOINTS
+        .map((joint) => body[`${handPrefix}${fingerPrefix}${joint}`]?.rotation)
+        .filter(Boolean);
+      if (currentQuats.length === 0) continue;
+      const previousQuats = rokokoLastQuats[channel];
+      if (previousQuats && previousQuats.length === currentQuats.length) {
+        const value = currentQuats.reduce(
+          (sum, current, index) => sum + quaternionAngle(previousQuats[index], current),
+          0,
+        );
+        handleFingerMovement(channel, value, "rokoko");
+      }
+      rokokoLastQuats[channel] = currentQuats;
+    }
+  }
 }
 
 function handleControlMessage(message) {
@@ -483,6 +540,17 @@ oscPort.open();
 oscPort.on("ready", () => {
   console.log(`OSC listening ${oscPort.options.localAddress}:${oscPort.options.localPort}`);
 });
+
+if (!args["--no-rokoko"]) {
+  const rokokoAddress = args["--rokoko-address"] || "0.0.0.0";
+  const rokokoPort = args["--rokoko-port"] || 14043;
+  const rokokoSocket = dgram.createSocket("udp4");
+  rokokoSocket.on("message", handleRokokoPacket);
+  rokokoSocket.on("error", (error) => console.error("Rokoko UDP error:", error.message));
+  rokokoSocket.bind(rokokoPort, rokokoAddress, () => {
+    console.log(`Rokoko JSON v3 (LZ4) listening ${rokokoAddress}:${rokokoPort}`);
+  });
+}
 
 if (args["--replay-fbx"]) {
   startFbxReplay(args["--replay-fbx"], args["--replay-fps"] || 30).catch((error) => {

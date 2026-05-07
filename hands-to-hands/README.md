@@ -1,10 +1,12 @@
 # Hands to Hands
 
-Rokoko glove OSC input to 10-bit haptic hand output.
+Rokoko glove input to 10-bit haptic hand output.
 
 The signal path is:
 
-1. Rokoko sends OSC to Node.js.
+1. Rokoko sends finger data to Node.js. Two transports are accepted:
+   - **Rokoko JSON v3 (LZ4)** on UDP port 14043 (the format Rokoko Studio's "Custom" forward emits by default). The server decompresses each frame, walks `scene.actors[0].body.<side><Finger>{Proximal,Medial,Distal}.rotation`, and computes the same summed quaternion-angle delta the FBX calibration uses.
+   - **OSC** on UDP port 8000 with `/hands/<side>/<finger>` or `/rokoko/<side>/<finger>` addresses, taking 1–4 numeric args.
 2. Node.js maps each glove finger to the matching haptic finger.
 3. Node.js publishes the 10-bit pattern to MQTT/Shiftr.
 4. The browser is only a visualization and control surface.
@@ -34,6 +36,8 @@ Useful options:
 
 ```sh
 node server.js --osc-port 8000 --mqtt-url ws://192.168.1.121:9001 --mqtt-topic hands
+node server.js --rokoko-port 14043           # default; matches Rokoko Studio Custom forward
+node server.js --no-rokoko                   # only listen on OSC
 node server.js --enabled
 node server.js --config config.json
 node server.js --replay-fbx ../realtime/demo_data/hands-3-playing-minimal.fbx --replay-fps 30
