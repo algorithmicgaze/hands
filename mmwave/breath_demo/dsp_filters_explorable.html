@@ -1,0 +1,2421 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>How filters work — convolution, FIRs, biquads, and the time-frequency law</title>
+<!--
+  Dependency map (topological order):
+    1.  the simplest filter: running average            (foundation)
+    2.  convolution: kernel slides, multiply, sum       (depends on 1)
+    3.  the impulse response is the filter              (depends on 2)
+    4.  same filter, frequency view                     (depends on 3)
+    5.  designing an FIR — windowed sinc                (depends on 4)
+    6.  the tradeoff you cannot escape (audio demo)     (depends on 5)
+    7.  IIR — recursion saves the day                   (depends on 6)
+    8.  the biquad and the Q knob                       (depends on 7)
+    9.  stability — where filters explode               (depends on 8)
+   10.  two dimensions — filtering images               (depends on 2)
+   11.  choosing your weapon                            (depends on 7-9)
+
+  Model contract:
+    Claim:        every filter is multiply-and-accumulate of past samples;
+                  FIR uses past inputs, IIR also uses past outputs.
+                  The time-frequency tradeoff is a physical law: a narrower
+                  passband always costs more taps or longer ringing.
+    Mechanism:    convolution stamps an impulse response at every input;
+                  recursion folds an infinite IR into a few coefficients;
+                  pole position in the z-plane decides stability.
+    Reader action: sliders for kernel length / cutoff / Q;
+                   step-stepper for convolution; reader-triggered audio;
+                   drag-pole on z-plane.
+    Visible consequence: passband sharpens, latency grows, output rings,
+                         filter blows up when poles cross the unit circle.
+    Evidence:     standard DSP textbook material — Smith's DSP Guide,
+                  RBJ audio cookbook, Oppenheim & Schafer. All examples
+                  are computed live in the reader's browser.
+    Limit:        single-precision floats; doesn't address fixed-point,
+                  multirate, adaptive, or nonlinear filters.
+-->
+<style>
+  :root {
+    --paper: #f7f7f7;
+    --ink: #444;
+    --ink-strong: #2b2b2b;
+    --muted: #76716a;
+    --line: #c9c1b4;
+    --line-dark: #918879;
+    --accent: #c64d2e;
+    --accent-soft: rgba(198, 77, 46, 0.18);
+    --accent-2: #2f6f73;
+    --accent-2-soft: rgba(47, 111, 115, 0.18);
+    --accent-3: #6b5b95;
+    --panel: #fffdf8;
+    --panel-2: #f7f2e9;
+    --grid: rgba(68, 68, 68, 0.13);
+    --grid-soft: rgba(68, 68, 68, 0.07);
+  }
+
+  * { box-sizing: border-box; }
+
+  html {
+    color: var(--ink);
+    background: var(--paper);
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 18px;
+    line-height: 1.55;
+  }
+
+  body {
+    margin: 0;
+    background:
+      linear-gradient(var(--grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid) 1px, transparent 1px),
+      var(--paper);
+    background-size: 32px 32px;
+  }
+
+  main {
+    width: min(1180px, calc(100% - 32px));
+    margin: 0 auto;
+    padding: 34px 0 70px;
+  }
+
+  header {
+    border-top: 4px solid var(--ink-strong);
+    border-bottom: 1px solid var(--line-dark);
+    padding: 30px 0 26px;
+    margin-bottom: 18px;
+  }
+
+  h1, h2, h3, h4 {
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    letter-spacing: 0;
+    line-height: 1.1;
+    color: var(--ink-strong);
+    margin: 0;
+  }
+
+  h1 {
+    max-width: 1000px;
+    font-size: clamp(2.1rem, 5vw, 4.2rem);
+    font-weight: 800;
+    line-height: 1.04;
+  }
+
+  h2 {
+    font-size: clamp(1.45rem, 3vw, 2.05rem);
+    margin-bottom: 10px;
+  }
+
+  h3 {
+    font-size: 1rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 8px;
+  }
+
+  p { margin: 0 0 1rem; max-width: 740px; }
+
+  em { color: var(--ink-strong); }
+
+  code {
+    font-family: "SFMono-Regular", Consolas, monospace;
+    font-size: 0.86em;
+    background: #ece7dd;
+    padding: 0.08em 0.32em;
+  }
+
+  .kicker {
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    font-size: 0.72rem;
+    color: var(--accent);
+    font-weight: 800;
+    margin-bottom: 14px;
+  }
+
+  .dek {
+    font-size: 1.18rem;
+    color: #5b554d;
+    margin-top: 18px;
+    max-width: 840px;
+  }
+
+  .byline {
+    margin-top: 20px;
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    font-size: 0.78rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+  }
+
+  .toc {
+    margin-top: 28px;
+    padding: 14px 18px;
+    border: 1px solid var(--line);
+    background: var(--panel);
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    font-size: 0.84rem;
+    color: var(--muted);
+  }
+
+  .toc-title {
+    color: var(--ink-strong);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-size: 0.74rem;
+    margin-bottom: 6px;
+  }
+
+  .toc ol {
+    margin: 0;
+    padding-left: 22px;
+    columns: 2;
+    column-gap: 28px;
+  }
+
+  .toc li { margin-bottom: 2px; }
+
+  .toc a { color: var(--ink); text-decoration: none; border-bottom: 1px dotted var(--line-dark); }
+  .toc a:hover { color: var(--accent); border-bottom-color: var(--accent); }
+
+  section {
+    display: grid;
+    grid-template-columns: minmax(0, 0.86fr) minmax(380px, 1.14fr);
+    gap: 38px;
+    align-items: start;
+    padding: 46px 0 38px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .copy {
+    position: sticky;
+    top: 20px;
+    min-width: 0;
+  }
+
+  .section-num {
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    font-size: 0.74rem;
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    font-weight: 800;
+    margin-bottom: 6px;
+  }
+
+  .figure {
+    background: var(--panel);
+    border: 1px solid var(--line-dark);
+    padding: 16px;
+    min-width: 0;
+  }
+
+  .figure + .figure { margin-top: 18px; }
+
+  .figure-title {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: baseline;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 8px;
+    margin-bottom: 12px;
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #5d574f;
+  }
+
+  .figure-title .hint { color: var(--accent); font-weight: 700; }
+
+  canvas, .canvas-host > svg, svg.figure-svg {
+    display: block;
+    width: 100%;
+    background:
+      linear-gradient(var(--grid-soft) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid-soft) 1px, transparent 1px),
+      #fbfaf6;
+    background-size: 20px 20px;
+    border: 1px solid var(--line);
+  }
+
+  canvas { height: 280px; }
+  .wide-canvas { height: 340px; }
+  .tall-canvas { height: 420px; }
+  .small-canvas { height: 220px; }
+
+  .controls {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+    margin-top: 14px;
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    font-size: 0.85rem;
+  }
+
+  .controls.two { grid-template-columns: 1fr 1fr; gap: 14px 24px; }
+
+  label {
+    display: grid;
+    grid-template-columns: 130px 1fr 78px;
+    gap: 10px;
+    align-items: center;
+    min-height: 28px;
+  }
+
+  label > span:first-child { color: #5d574f; }
+
+  input[type="range"] {
+    width: 100%;
+    accent-color: var(--accent);
+  }
+
+  output {
+    font-family: "SFMono-Regular", Consolas, monospace;
+    font-size: 0.86rem;
+    color: var(--ink-strong);
+    text-align: right;
+  }
+
+  button, select {
+    appearance: none;
+    border: 1px solid var(--ink);
+    background: #eee7da;
+    color: var(--ink);
+    font: 700 0.82rem "Helvetica Neue", Arial, sans-serif;
+    padding: 8px 12px;
+    cursor: pointer;
+  }
+
+  button:hover { background: #e1d6c5; }
+  button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  button[disabled] { opacity: 0.4; cursor: not-allowed; }
+
+  .button-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .radio-row {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+    margin-top: 6px;
+  }
+
+  .radio-row button { flex: 1 1 0; min-width: 70px; }
+
+  .readout {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-top: 12px;
+    font-family: "Helvetica Neue", Arial, sans-serif;
+  }
+
+  .readout.two { grid-template-columns: repeat(2, 1fr); }
+  .readout.four { grid-template-columns: repeat(4, 1fr); }
+
+  .readout div {
+    border: 1px solid var(--line);
+    background: var(--panel-2);
+    padding: 10px;
+    min-height: 70px;
+  }
+
+  .readout strong {
+    display: block;
+    font-size: 1.18rem;
+    line-height: 1.1;
+    color: var(--ink-strong);
+    font-family: "SFMono-Regular", Consolas, monospace;
+  }
+
+  .readout span {
+    display: block;
+    font-size: 0.7rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-top: 6px;
+  }
+
+  .note {
+    max-width: none;
+    margin: 12px 0 0;
+    padding-top: 10px;
+    border-top: 1px solid var(--line);
+    color: #5f5a52;
+    font-size: 0.95rem;
+  }
+
+  .legend {
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+    margin: 8px 0 0;
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    font-size: 0.78rem;
+    color: var(--muted);
+  }
+
+  .legend .swatch {
+    display: inline-block;
+    width: 16px;
+    height: 3px;
+    margin-right: 6px;
+    vertical-align: middle;
+  }
+  .legend .dot {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    margin-right: 6px;
+    vertical-align: middle;
+  }
+
+  pre.code {
+    margin: 0;
+    padding: 14px 16px;
+    border: 1px solid var(--line);
+    background: #fbfaf6;
+    color: #2b2b2b;
+    font-family: "SFMono-Regular", Consolas, monospace;
+    font-size: 0.78rem;
+    line-height: 1.6;
+    overflow-x: auto;
+    white-space: pre;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  pre.code .kw { color: #6b5b95; font-weight: 700; }
+  pre.code .ty { color: #2f6f73; }
+  pre.code .num { color: #c64d2e; }
+  pre.code .com { color: #918879; font-style: italic; }
+  pre.code .fn { color: #2b2b2b; font-weight: 700; }
+  pre.code .str { color: #6b5b95; }
+
+  .code-pair {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+
+  .code-pair > div { display: flex; flex-direction: column; min-width: 0; }
+  .code-pair h4 { margin-bottom: 6px; }
+
+  @media (max-width: 720px) { .code-pair { grid-template-columns: 1fr; } }
+
+  .pull {
+    margin: 36px 0 18px;
+    padding: 22px 26px;
+    border-left: 4px solid var(--accent);
+    background: var(--panel);
+    font-size: 1.18rem;
+    line-height: 1.4;
+    color: var(--ink-strong);
+    max-width: 880px;
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    font-weight: 500;
+  }
+
+  .equation {
+    display: block;
+    margin: 14px 0 10px;
+    padding: 14px 18px;
+    background: var(--panel-2);
+    border-left: 3px solid var(--accent);
+    font-family: "SFMono-Regular", Consolas, monospace;
+    font-size: 0.92rem;
+    color: var(--ink-strong);
+    line-height: 1.5;
+  }
+
+  .equation .where {
+    display: block;
+    margin-top: 8px;
+    font-family: Georgia, serif;
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+
+  footer {
+    padding-top: 34px;
+    color: #5f5a52;
+    font-size: 0.95rem;
+  }
+
+  footer h3 { margin-top: 22px; margin-bottom: 6px; }
+
+  footer ul { padding-left: 18px; margin: 0 0 12px; }
+
+  footer li { margin-bottom: 4px; }
+
+  /* the kernel-as-row visual used in §1, §2, §3 */
+  .stripe-row {
+    display: grid;
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line-dark);
+    margin: 6px 0;
+  }
+  .stripe-cell {
+    background: var(--panel);
+    text-align: center;
+    font-family: "SFMono-Regular", Consolas, monospace;
+    font-size: 0.7rem;
+    padding: 6px 0;
+    color: var(--ink);
+    transition: background 0.18s;
+  }
+
+  /* Reduced motion override */
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+    .stripe-cell { transition: none !important; }
+  }
+
+  @media (max-width: 940px) {
+    section { grid-template-columns: 1fr; gap: 22px; padding-top: 36px; }
+    .copy { position: static; }
+    .controls.two { grid-template-columns: 1fr; }
+    .readout, .readout.four { grid-template-columns: 1fr 1fr; }
+    .toc ol { columns: 1; }
+    label { grid-template-columns: 110px 1fr 64px; }
+  }
+
+  @media (max-width: 480px) {
+    label { grid-template-columns: 1fr; gap: 4px; }
+    output { text-align: left; }
+    .readout, .readout.four { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="kicker">Explorable explanation · digital signal processing · companion to mmwave_explainer</div>
+    <h1>How filters work — convolution, FIRs, biquads, and the time-frequency law</h1>
+    <p class="dek">Every digital filter — the smoother on a sensor reading, the bass on a synth, the blur in Photoshop, the band-pass that finds your heartbeat — is the same operation: multiply past samples by weights, add them up. Here is how that one operation gives rise to FIR and IIR, why narrow-band filters always ring, and why the same machinery filters a sound and an image without changing a line.</p>
+    <p class="byline">a companion piece · readable in about 35 minutes</p>
+    <nav class="toc" aria-label="Table of contents">
+      <div class="toc-title">Contents</div>
+      <ol>
+        <li><a href="#s1">The simplest filter: running average</a></li>
+        <li><a href="#s2">Convolution — kernel, slide, multiply, sum</a></li>
+        <li><a href="#s3">The impulse response is the filter</a></li>
+        <li><a href="#s4">The same filter, frequency view</a></li>
+        <li><a href="#s5">Designing an FIR: the windowed sinc</a></li>
+        <li><a href="#s6">The tradeoff you cannot escape</a></li>
+        <li><a href="#s7">IIR — when recursion saves the day</a></li>
+        <li><a href="#s8">The biquad and the Q knob</a></li>
+        <li><a href="#s9">Stability — where filters explode</a></li>
+        <li><a href="#s10">Two dimensions — filtering images</a></li>
+        <li><a href="#s11">Choosing your weapon</a></li>
+      </ol>
+    </nav>
+  </header>
+
+  <!-- ============================================================ -->
+  <section id="s1">
+    <div class="copy">
+      <div class="section-num">§ 1</div>
+      <h2>The simplest filter: running average</h2>
+      <p>A <em>signal</em>, for our purposes, is just an array of numbers — measurements taken at regular intervals. Audio is a signal. A breath sensor's output is a signal. Even a row of pixels across an image is a signal.</p>
+      <p>A <em>filter</em> is a function that takes one signal and produces another, sample by sample. The simplest one is the <em>running average</em>: each output sample is the mean of the last few input samples.</p>
+      <pre class="code">
+<span class="kw">def</span> <span class="fn">running_average</span>(x, N):
+    out = [<span class="num">0</span>] * <span class="fn">len</span>(x)
+    <span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="fn">len</span>(x)):
+        <span class="com"># window of last N samples (or as many as we have)</span>
+        lo = <span class="fn">max</span>(<span class="num">0</span>, i - N + <span class="num">1</span>)
+        out[i] = <span class="fn">sum</span>(x[lo : i + <span class="num">1</span>]) / N
+    <span class="kw">return</span> out</pre>
+      <p>Drag the kernel-length slider. The orange trace is the input — a sine wave with noise added. The teal trace is the output. Notice that as <em>N</em> grows, the noise wiggles get smaller (the filter <em>smooths</em>) but the curve also lags slightly behind the input. Both effects are inevitable. They are the whole subject of this page.</p>
+    </div>
+    <div class="figure">
+      <div class="figure-title"><span>Figure 1 · running average</span><span class="hint">drag N</span></div>
+      <canvas id="s1Canvas" class="wide-canvas" aria-label="Noisy sine input filtered by running average"></canvas>
+      <div class="legend">
+        <span><span class="swatch" style="background:var(--accent);"></span>input (noisy sine)</span>
+        <span><span class="swatch" style="background:var(--accent-2);"></span>output (averaged)</span>
+        <span><span class="swatch" style="background:var(--ink-strong);"></span>true sine</span>
+      </div>
+      <div class="controls">
+        <label><span>Kernel length N</span><input id="s1N" type="range" min="1" max="31" step="2" value="7"><output id="s1NOut">7</output></label>
+        <label><span>Noise</span><input id="s1Noise" type="range" min="0" max="1" step="0.02" value="0.35"><output id="s1NoiseOut">0.35</output></label>
+      </div>
+      <p class="note">As you can see, the running average is an <em>unweighted</em> sum — every sample in the window contributes equally. That uniformity has a cost we will diagnose in Section 4: the running average attenuates some frequencies less than others, in a pattern that turns out to be embarrassingly bad. But the structure of the operation — slide a window, multiply each sample by a weight, add — is the same structure every digital filter on this page uses.</p>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="s2">
+    <div class="copy">
+      <div class="section-num">§ 2</div>
+      <h2>Convolution — kernel, slide, multiply, sum</h2>
+      <p>Generalising the running average is simple: replace the equal weights with arbitrary weights. The list of weights is called the <em>kernel</em> (or impulse response, or filter taps — three names for the same array). The operation that applies the kernel to a signal is called <em>convolution</em>.</p>
+      <pre class="code">
+<span class="kw">def</span> <span class="fn">convolve</span>(x, h):
+    <span class="com"># h is the kernel (length M); x is the input (length N)</span>
+    out = [<span class="num">0.0</span>] * <span class="fn">len</span>(x)
+    M = <span class="fn">len</span>(h)
+    <span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="fn">len</span>(x)):
+        <span class="kw">for</span> k <span class="kw">in</span> <span class="fn">range</span>(M):
+            <span class="kw">if</span> i - k &gt;= <span class="num">0</span>:
+                out[i] += h[k] * x[i - k]
+    <span class="kw">return</span> out</pre>
+      <p>That inner loop is the entire engine of digital filtering. Every FIR filter on this page is exactly this loop with a different kernel <code>h</code>. The kernel has length <em>M</em>, and the output at sample <em>i</em> is a weighted sum of the most recent <em>M</em> input samples.</p>
+      <p>Press <em>Step</em>. The kernel is the orange row at the top; it slides one sample to the right with each press, multiplies its weights by the inputs underneath, and deposits the sum into the output row. After a few steps you'll see how the output is built up from overlapping kernel placements.</p>
+    </div>
+    <div class="figure">
+      <div class="figure-title"><span>Figure 2 · convolution stepper</span><span class="hint">step through it</span></div>
+      <canvas id="s2Canvas" class="tall-canvas" aria-label="Animated convolution showing kernel sliding over input"></canvas>
+      <div class="controls">
+        <div class="button-row">
+          <button id="s2Step">Step ▸</button>
+          <button id="s2Play">Run</button>
+          <button id="s2Reset">Reset</button>
+        </div>
+        <label><span>Kernel preset</span>
+          <select id="s2Kernel">
+            <option value="avg5">running avg (5 taps)</option>
+            <option value="ramp">triangular (5 taps)</option>
+            <option value="diff">difference [1,-1]</option>
+            <option value="sharp">sharpener [-1, 3, -1]</option>
+          </select>
+          <output></output>
+        </label>
+      </div>
+      <p class="note">As you can see, the kernel shape <em>is</em> the filter's behaviour. The triangular kernel weights the centre sample most heavily and gives a smoother output than the rectangular running average. The two-tap difference <code>[1, -1]</code> is the simplest high-pass filter — it amplifies sample-to-sample changes and kills constants. The same loop, four different filters.</p>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="s3">
+    <div class="copy">
+      <div class="section-num">§ 3</div>
+      <h2>The impulse response is the filter</h2>
+      <p>What happens if we feed a kernel a signal that is zero everywhere except for a single 1 — an <em>impulse</em>? The convolution code multiplies every weight by zero except at the moment the impulse passes through, where it multiplies by 1. The output is a copy of the kernel, deposited at the impulse's location.</p>
+      <p>So the kernel is the filter's response to an impulse. We call it the <em>impulse response</em>, and it is the filter's complete identity: if you know the impulse response, you can predict the output for <em>any</em> input.</p>
+      <p>Click anywhere along the input row. You're placing an impulse there. The output row immediately shows the kernel stamped at that location. Click another spot — a second copy appears, and where the two stamps overlap, they add. That additivity is called <em>linearity</em>, and it's the property that makes filtering well-behaved.</p>
+    </div>
+    <div class="figure">
+      <div class="figure-title"><span>Figure 3 · impulse stamping</span><span class="hint">click to place impulses</span></div>
+      <canvas id="s3Canvas" class="wide-canvas" aria-label="Click to place impulses; the output shows kernel copies"></canvas>
+      <div class="legend">
+        <span><span class="dot" style="background:var(--accent);"></span>your impulses</span>
+        <span><span class="swatch" style="background:var(--accent-2);"></span>kernel stamped at each impulse</span>
+      </div>
+      <div class="controls">
+        <div class="button-row">
+          <button id="s3Clear">Clear impulses</button>
+          <button id="s3Demo">Place demo pattern</button>
+        </div>
+        <label><span>Kernel</span>
+          <select id="s3Kernel">
+            <option value="hann">Hann bump (smoothing)</option>
+            <option value="echo">echo [1, 0, 0, 0.6]</option>
+            <option value="diff">difference [1, -1]</option>
+          </select>
+          <output></output>
+        </label>
+      </div>
+      <p class="note">Notice the third kernel option, "echo." It's a kernel of length four with a 1 at position 0 and a 0.6 at position 3. Convolved with any input, it produces the input plus a delayed, attenuated copy. <em>That is a digital reverb.</em> The whole audio-effects industry is just clever choices of impulse response.</p>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="s4">
+    <div class="copy">
+      <div class="section-num">§ 4</div>
+      <h2>The same filter, frequency view</h2>
+      <p>So far we've watched filters in the time domain — kernels stamping onto signals. The same filter has a second, equally-real existence in the <em>frequency domain</em>: a description of how much it attenuates or amplifies each input frequency.</p>
+      <p>The link between the two views is the <em>discrete Fourier transform</em>, which decomposes a signal (or a kernel) into a sum of pure sines and cosines. We'll use it as a tool, not derive it. The relevant fact: the magnitude of a kernel's Fourier transform, plotted against frequency, is its <em>frequency response</em>.</p>
+      <p>Drag the slider. On the left is the running-average kernel of length <em>N</em>. On the right is its frequency response: how loud each input frequency comes through. Notice the deep nulls. They sit at integer multiples of the sample rate divided by <em>N</em>.</p>
+      <span class="equation">
+        nulls at f = k · f<sub>s</sub> / N for k = 1, 2, 3, …
+        <span class="where">f<sub>s</sub> is the sample rate (44 100 Hz typical for audio); k indexes successive zeros.</span>
+      </span>
+      <p>That formula explains a tremendous amount of practical filter behaviour. A 5-sample running average at audio rate has nulls at 8 820 Hz, 17 640 Hz, and so on — so it kills those exact tones perfectly while letting their neighbours through almost unattenuated. The running average is, frequency-domain-wise, a strange filter: lumpy passband, lumpy stopband, deep nulls in awkward places. We almost always want better.</p>
+    </div>
+    <div class="figure">
+      <div class="figure-title"><span>Figure 4 · time vs. frequency</span><span class="hint">drag N</span></div>
+      <canvas id="s4Canvas" class="tall-canvas" aria-label="Kernel and its frequency response, side by side"></canvas>
+      <div class="legend">
+        <span><span class="swatch" style="background:var(--accent);"></span>kernel (left, time)</span>
+        <span><span class="swatch" style="background:var(--accent-2);"></span>frequency response (right, log magnitude)</span>
+      </div>
+      <div class="controls">
+        <label><span>Kernel length N</span><input id="s4N" type="range" min="3" max="33" step="2" value="9"><output id="s4NOut">9</output></label>
+      </div>
+      <p class="note">As you slide N upward, the nulls in the frequency response march closer to zero (because f<sub>s</sub>/N shrinks) and the main lobe in the passband narrows. <em>Longer kernel, narrower passband.</em> That is the law we'll meet again and again. The next two sections design something better than the running average — but they cannot escape this law.</p>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="s5">
+    <div class="copy">
+      <div class="section-num">§ 5</div>
+      <h2>Designing an FIR: the windowed sinc</h2>
+      <p>If we want a clean low-pass — passes everything below some cutoff, kills everything above — there's a textbook recipe: take the inverse Fourier transform of the ideal "rectangle" frequency response. That gives a continuous function called the <em>sinc</em>.</p>
+      <pre class="code">
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+
+<span class="kw">def</span> <span class="fn">windowed_sinc</span>(cutoff, M, window=<span class="str">'hann'</span>):
+    <span class="com"># cutoff in normalized freq (0..0.5); M = filter length</span>
+    n  = np.<span class="fn">arange</span>(M) - (M - <span class="num">1</span>) / <span class="num">2</span>
+    h  = np.<span class="fn">sinc</span>(<span class="num">2</span> * cutoff * n)            <span class="com"># the ideal continuous filter</span>
+    <span class="kw">if</span> window == <span class="str">'hann'</span>:
+        h *= <span class="num">0.5</span> - <span class="num">0.5</span> * np.<span class="fn">cos</span>(<span class="num">2</span> * np.pi * np.<span class="fn">arange</span>(M) / (M - <span class="num">1</span>))
+    <span class="kw">return</span> h / h.<span class="fn">sum</span>()                     <span class="com"># normalize DC gain to 1</span></pre>
+      <p>An ideal sinc is infinitely long, which we cannot store. So we cut it off — a process called <em>truncation</em> — but a hard cut is itself a filter (a rectangular window) and it produces ringing in the frequency response, called the <em>Gibbs phenomenon</em>. The fix is to multiply the truncated sinc by a smoother window that tapers to zero at the edges. The Hann and Blackman windows are two such tapers.</p>
+      <p>Try the radio buttons. The rectangular window's frequency response has visible ripples in the stopband — about 21 dB of suppression, no matter how long you make the kernel. Hann gives ~44 dB of suppression with a gentler taper; Blackman gives ~74 dB but with a wider transition band. There's no free lunch — every choice of window trades sidelobe height against transition width.</p>
+    </div>
+    <div class="figure">
+      <div class="figure-title"><span>Figure 5 · windowed sinc</span><span class="hint">try each window</span></div>
+      <canvas id="s5Canvas" class="tall-canvas" aria-label="Windowed sinc kernel and frequency response"></canvas>
+      <div class="legend">
+        <span><span class="swatch" style="background:var(--accent);"></span>kernel</span>
+        <span><span class="swatch" style="background:var(--accent-2);"></span>frequency response (dB)</span>
+      </div>
+      <div class="controls two">
+        <label><span>Cutoff</span><input id="s5Cutoff" type="range" min="0.05" max="0.45" step="0.01" value="0.2"><output id="s5CutoffOut">0.20</output></label>
+        <label><span>Length M</span><input id="s5M" type="range" min="9" max="151" step="2" value="51"><output id="s5MOut">51</output></label>
+      </div>
+      <div class="radio-row" id="s5Window">
+        <button data-win="rect" class="active">rect</button>
+        <button data-win="hann">Hann</button>
+        <button data-win="blackman">Blackman</button>
+      </div>
+      <p class="note">Notice the rect window's "shoulder" near the cutoff — small but persistent ripples in both passband and stopband. That's Gibbs. Hann smooths it dramatically. The kernel shape gets bumpier (literally has bumps in the middle taper) but the frequency response gets cleaner. <em>The shape of the window is the price of the shape of the response.</em></p>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="s6">
+    <div class="copy">
+      <div class="section-num">§ 6</div>
+      <h2>The tradeoff you cannot escape</h2>
+      <p>Now we can put numbers on the central tradeoff. A windowed-sinc low-pass with kernel length <em>M</em> at sample rate <em>f<sub>s</sub></em> has:</p>
+      <ul>
+        <li><em>Transition width</em> ≈ 4 · f<sub>s</sub> / M (Hann window). To make the transition twice as sharp, double the kernel length.</li>
+        <li><em>Latency</em> = (M − 1) / 2 samples. The output is delayed by half the kernel length. Always.</li>
+      </ul>
+      <p>Those two facts together mean: <em>a sharper filter is always a slower filter</em>, by exactly this proportion. Halving the transition band doubles the latency. There is no tap arrangement that escapes this.</p>
+      <p>Press <em>Play</em>. We'll synthesize a test sound — a 440 Hz tone (the wanted signal) plus a 4 000 Hz tone (the unwanted noise we'd like to filter out) — and apply a windowed-sinc low-pass with the current kernel length. As you slide M up, the noise tone gets quieter (good!) and the latency grows (bad). Listen for both.</p>
+    </div>
+    <div class="figure">
+      <div class="figure-title"><span>Figure 6 · audible tradeoff</span><span class="hint">click play, drag M</span></div>
+      <canvas id="s6Canvas" class="wide-canvas" aria-label="Frequency response of low-pass with the two test tones marked"></canvas>
+      <div class="legend">
+        <span><span class="swatch" style="background:var(--accent-2);"></span>filter response (dB)</span>
+        <span><span class="dot" style="background:var(--accent);"></span>440 Hz tone (keep)</span>
+        <span><span class="dot" style="background:var(--accent-3);"></span>4 000 Hz tone (kill)</span>
+      </div>
+      <div class="controls two">
+        <label><span>Kernel length M</span><input id="s6M" type="range" min="11" max="301" step="2" value="51"><output id="s6MOut">51</output></label>
+        <label><span>Cutoff</span><input id="s6Cutoff" type="range" min="500" max="3000" step="50" value="1200"><output id="s6CutoffOut">1200 Hz</output></label>
+      </div>
+      <div class="button-row">
+        <button id="s6Play">▶ Play (3 s)</button>
+        <button id="s6Stop">Stop</button>
+      </div>
+      <div class="readout">
+        <div><strong id="s6LatRead">— ms</strong><span>filter latency</span></div>
+        <div><strong id="s6Atten">— dB</strong><span>at 4 kHz</span></div>
+        <div><strong id="s6Trans">— Hz</strong><span>transition width</span></div>
+      </div>
+      <p class="note">As you raise M, the unwanted 4 kHz tone fades. By M ≈ 100 it's nearly inaudible. But notice the latency readout — at 44.1 kHz audio rate, M = 100 means a delay of roughly 1.1 ms, which you wouldn't notice talking but which is fatal in a guitar pedal. M = 1 000 means 11 ms of delay, which already feels sluggish on a percussion track. <em>This is why every audio plugin documents its latency.</em></p>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="s7">
+    <div class="copy">
+      <div class="section-num">§ 7</div>
+      <h2>IIR — when recursion saves the day</h2>
+      <p>Linear FIR filters are honest. You see exactly what they do (the kernel) and you can prove things about them (linear phase, guaranteed stability). But they are expensive: a 200-tap filter is 200 multiply-adds per output sample.</p>
+      <p>An <em>IIR</em> — infinite impulse response — filter sidesteps this by feeding its own output back into itself. Here are a one-pole low-pass and an FIR low-pass at the same cutoff frequency, side by side:</p>
+      <div class="code-pair">
+        <div>
+          <h4>FIR (101 taps, Hann window)</h4>
+          <pre class="code">
+<span class="kw">def</span> <span class="fn">fir_lp</span>(x, h):
+    <span class="com"># h is 101 weights from §5</span>
+    out = [<span class="num">0.0</span>] * <span class="fn">len</span>(x)
+    M = <span class="fn">len</span>(h)
+    <span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="fn">len</span>(x)):
+        <span class="kw">for</span> k <span class="kw">in</span> <span class="fn">range</span>(M):
+            <span class="kw">if</span> i - k &gt;= <span class="num">0</span>:
+                out[i] += h[k] * x[i - k]
+    <span class="kw">return</span> out
+<span class="com"># 101 multiplies per sample</span></pre>
+        </div>
+        <div>
+          <h4>IIR (1 pole)</h4>
+          <pre class="code">
+<span class="kw">def</span> <span class="fn">iir_lp</span>(x, alpha):
+    <span class="com"># alpha = cutoff smoothing constant</span>
+    out = [<span class="num">0.0</span>] * <span class="fn">len</span>(x)
+    <span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="fn">len</span>(x)):
+        prev = out[i - <span class="num">1</span>] <span class="kw">if</span> i &gt; <span class="num">0</span> <span class="kw">else</span> <span class="num">0</span>
+        out[i] = alpha * x[i] + (<span class="num">1</span> - alpha) * prev
+    <span class="kw">return</span> out
+<span class="com"># 2 multiplies per sample</span></pre>
+        </div>
+      </div>
+      <p>The IIR's secret is that <code>out[i]</code> already contains the influence of every past input — through <code>out[i-1]</code>, which contained <code>out[i-2]</code>, and so on, all the way back to time zero. <em>The recursion does in two multiplies what the FIR needs a hundred multiplies to do.</em></p>
+      <p>The figure compares both filters' frequency responses at the same cutoff. They are remarkably close at this scale. Slide the cutoff to compare them across the spectrum.</p>
+    </div>
+    <div class="figure">
+      <div class="figure-title"><span>Figure 7 · FIR vs IIR</span><span class="hint">drag cutoff</span></div>
+      <canvas id="s7Canvas" class="tall-canvas" aria-label="Frequency response of FIR and IIR at same cutoff"></canvas>
+      <div class="legend">
+        <span><span class="swatch" style="background:var(--accent);"></span>FIR (101 taps)</span>
+        <span><span class="swatch" style="background:var(--accent-2);"></span>IIR (1 pole)</span>
+      </div>
+      <div class="controls">
+        <label><span>Cutoff (norm.)</span><input id="s7Cutoff" type="range" min="0.02" max="0.4" step="0.005" value="0.1"><output id="s7CutoffOut">0.10</output></label>
+      </div>
+      <div class="readout">
+        <div><strong>101</strong><span>FIR multiplies / sample</span></div>
+        <div><strong>2</strong><span>IIR multiplies / sample</span></div>
+        <div><strong id="s7Diff">— dB</strong><span>response diff at cutoff</span></div>
+      </div>
+      <p class="note">At low to mid cutoffs the curves agree to within a fraction of a decibel, and the IIR is 50× cheaper. The catch: an IIR has <em>nonlinear phase</em> — different frequencies pass through with different delays — which sometimes matters (in audio mastering, in certain measurement contexts) and sometimes doesn't (in real-time effects, sensor smoothing, image processing). For most jobs, IIR's cheapness wins.</p>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="s8">
+    <div class="copy">
+      <div class="section-num">§ 8</div>
+      <h2>The biquad and the Q knob</h2>
+      <p>The workhorse IIR filter is the <em>biquad</em>: two poles and two zeros, expressed as five coefficients. A single biquad can be a low-pass, a high-pass, a band-pass, a notch, a peaking EQ, a shelf — depending only on how you compute the coefficients. Robert Bristow-Johnson's "audio EQ cookbook" is the canonical recipe. Here it is, slightly simplified:</p>
+      <pre class="code">
+<span class="kw">def</span> <span class="fn">biquad_bpf</span>(f0, Q, fs):
+    <span class="com"># band-pass biquad coefficients (RBJ cookbook)</span>
+    w0    = <span class="num">2</span> * pi * f0 / fs
+    alpha = <span class="fn">sin</span>(w0) / (<span class="num">2</span> * Q)
+    cos_  = <span class="fn">cos</span>(w0)
+    b0, b1, b2 =  alpha,  <span class="num">0</span>,            -alpha
+    a0, a1, a2 =  <span class="num">1</span> + alpha,  -<span class="num">2</span> * cos_,  <span class="num">1</span> - alpha
+    <span class="kw">return</span> [c / a0 <span class="kw">for</span> c <span class="kw">in</span> (b0, b1, b2, a1, a2)]
+
+<span class="kw">def</span> <span class="fn">apply_biquad</span>(x, b0, b1, b2, a1, a2):
+    out = [<span class="num">0.0</span>] * <span class="fn">len</span>(x)
+    x1 = x2 = y1 = y2 = <span class="num">0</span>
+    <span class="kw">for</span> i, xi <span class="kw">in</span> <span class="fn">enumerate</span>(x):
+        yi = b0*xi + b1*x1 + b2*x2 - a1*y1 - a2*y2
+        out[i] = yi
+        x2, x1 = x1, xi
+        y2, y1 = y1, yi
+    <span class="kw">return</span> out</pre>
+      <p>That's it — the entire IIR machinery for almost every audio EQ in the world. <em>Q</em> is the quality factor: the ratio of the centre frequency to the bandwidth. Low Q is a wide, gentle band; high Q is a tight, surgical resonance.</p>
+      <p>Drag the Q slider. On the left, the frequency response sharpens into a tight peak. On the right, the impulse response gets longer and longer — the filter rings for many cycles before settling. <em>That ringing is what we paid for the sharp peak.</em> No biquad design escapes it.</p>
+    </div>
+    <div class="figure">
+      <div class="figure-title"><span>Figure 8 · biquad band-pass</span><span class="hint">drag Q, hear it ring</span></div>
+      <canvas id="s8Canvas" class="tall-canvas" aria-label="Biquad frequency and impulse response"></canvas>
+      <div class="legend">
+        <span><span class="swatch" style="background:var(--accent);"></span>frequency response (dB, left)</span>
+        <span><span class="swatch" style="background:var(--accent-2);"></span>impulse response (right)</span>
+      </div>
+      <div class="controls two">
+        <label><span>Q (sharpness)</span><input id="s8Q" type="range" min="0.5" max="30" step="0.1" value="3"><output id="s8QOut">3.0</output></label>
+        <label><span>f₀ (centre)</span><input id="s8F0" type="range" min="200" max="3000" step="20" value="800"><output id="s8F0Out">800 Hz</output></label>
+      </div>
+      <div class="button-row">
+        <button id="s8Play">▶ Hit it (impulse)</button>
+        <button id="s8PlayNoise">▶ White noise → biquad</button>
+        <button id="s8Stop">Stop</button>
+      </div>
+      <div class="readout">
+        <div><strong id="s8Bw">— Hz</strong><span>3 dB bandwidth</span></div>
+        <div><strong id="s8Ring">— ms</strong><span>ring duration</span></div>
+        <div><strong id="s8Peak">— dB</strong><span>peak gain</span></div>
+      </div>
+      <p class="note">Click <em>Hit it</em> at high Q. The biquad's impulse response is an exponentially-decaying sinusoid — it rings at f₀, with a decay rate set by Q. <em>White noise → biquad</em> sends pink-ish noise through, and the biquad emphasises the band around f₀ so strongly that you hear an audible pitch even though the input had none. That's resonance — a band-pass with high Q is, audibly, a tuned bell.</p>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="s9">
+    <div class="copy">
+      <div class="section-num">§ 9</div>
+      <h2>Stability — where filters explode</h2>
+      <p>The IIR's recursion is what gives it cheapness, sharpness, and ringing. It is also what makes it dangerous. Feed an IIR's output back into itself with the wrong coefficients and the output grows without bound — the filter <em>explodes</em>.</p>
+      <p>The condition for stability has a clean geometric form. A biquad has two <em>poles</em>, complex numbers that determine its behaviour. Plot them on the complex plane, draw a circle of radius 1 (the <em>unit circle</em>). If both poles are inside the circle, the filter is stable: bounded input gives bounded output. If a pole reaches the circle, the filter rings forever (a sustained sinusoid). If a pole crosses outside, the output grows exponentially.</p>
+      <p>Drag the orange dot. We've placed one pole on the complex plane (its conjugate is automatically reflected — biquads with real coefficients always have conjugate-pair poles). The right panel shows the impulse response: the time-domain output when you feed the filter a single 1.</p>
+    </div>
+    <div class="figure">
+      <div class="figure-title"><span>Figure 9 · z-plane stability</span><span class="hint">drag the pole</span></div>
+      <canvas id="s9Canvas" class="tall-canvas" aria-label="Complex plane with draggable pole and impulse response"></canvas>
+      <div class="legend">
+        <span><span class="dot" style="background:var(--accent);"></span>pole position (drag me)</span>
+        <span><span class="swatch" style="background:var(--accent-2);"></span>impulse response</span>
+        <span><span class="swatch" style="background:var(--ink-strong);"></span>unit circle</span>
+      </div>
+      <div class="readout">
+        <div><strong id="s9Mag">—</strong><span>|pole|</span></div>
+        <div><strong id="s9Stab">—</strong><span>stability</span></div>
+        <div><strong id="s9Freq">— Hz</strong><span>resonance</span></div>
+      </div>
+      <p class="note">Inside the unit circle: the impulse response decays. Closer to the edge means slower decay (more ringing). On the circle: the impulse response oscillates forever at constant amplitude — a perfect sustained sinusoid. Outside: the output grows exponentially and the filter is useless. <em>Every IIR design tool exists to put your poles where you want them inside the circle.</em></p>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="s10">
+    <div class="copy">
+      <div class="section-num">§ 10</div>
+      <h2>Two dimensions — filtering images</h2>
+      <p>An image is a 2D array of pixel values. A 2D filter is a 2D kernel — typically a small square, like 3×3 or 5×5. Convolution is the same operation as before, just slid in two directions instead of one.</p>
+      <pre class="code">
+<span class="kw">def</span> <span class="fn">convolve_2d</span>(img, K):
+    <span class="com"># img: H×W image; K: kH×kW kernel; returns same shape</span>
+    H, W   = img.shape
+    kH, kW = K.shape
+    out    = np.<span class="fn">zeros_like</span>(img)
+    <span class="kw">for</span> y <span class="kw">in</span> <span class="fn">range</span>(H):
+        <span class="kw">for</span> x <span class="kw">in</span> <span class="fn">range</span>(W):
+            acc = <span class="num">0</span>
+            <span class="kw">for</span> dy <span class="kw">in</span> <span class="fn">range</span>(kH):
+                <span class="kw">for</span> dx <span class="kw">in</span> <span class="fn">range</span>(kW):
+                    iy = y + dy - kH // <span class="num">2</span>
+                    ix = x + dx - kW // <span class="num">2</span>
+                    <span class="kw">if</span> <span class="num">0</span> &lt;= iy &lt; H <span class="kw">and</span> <span class="num">0</span> &lt;= ix &lt; W:
+                        acc += K[dy, dx] * img[iy, ix]
+            out[y, x] = acc
+    <span class="kw">return</span> out</pre>
+      <p>Five lines of nested loop, exactly the same multiply-and-accumulate pattern as the 1D case. The kernel itself decides the filter's job. Click each preset:</p>
+      <ul>
+        <li><em>Box blur:</em> a flat square of equal weights summing to 1. Smooths the image — the 2D running average.</li>
+        <li><em>Gaussian blur:</em> a bell-shaped square. Smoother than box blur with the same support, because the Gaussian's frequency response has no nulls.</li>
+        <li><em>Sharpen:</em> negative weights around a strong centre. Boosts edges by amplifying anything that doesn't match its neighbours.</li>
+        <li><em>Sobel-x:</em> positive on the left, negative on the right. A 2D high-pass aimed at vertical edges. The same machinery as the 1D <code>[1, -1]</code> from §2.</li>
+        <li><em>Laplacian:</em> negative centre, positive surround. A 2D high-pass that detects all edges, regardless of orientation.</li>
+      </ul>
+      <p>The image on the right is filtered live, in JavaScript, using the same multiply-and-accumulate loop you read above.</p>
+    </div>
+    <div class="figure">
+      <div class="figure-title"><span>Figure 10 · 2D filtering</span><span class="hint">click a kernel</span></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <canvas id="s10In" class="small-canvas" style="height:240px;" aria-label="Test image, original"></canvas>
+        <canvas id="s10Out" class="small-canvas" style="height:240px;" aria-label="Test image, filtered"></canvas>
+      </div>
+      <div class="legend">
+        <span style="font-size:0.78rem;">left: original · right: filtered (kernel below)</span>
+      </div>
+      <div class="radio-row" id="s10Kernel" style="margin-top:8px;">
+        <button data-k="identity" class="active">identity</button>
+        <button data-k="boxblur">box blur</button>
+        <button data-k="gauss">Gaussian</button>
+        <button data-k="sharpen">sharpen</button>
+        <button data-k="sobelx">Sobel-x</button>
+        <button data-k="laplace">Laplacian</button>
+      </div>
+      <div id="s10Mat" style="margin-top:10px;font-family:'SFMono-Regular',Consolas,monospace;font-size:0.8rem;background:var(--panel-2);border:1px solid var(--line);padding:10px;white-space:pre;color:var(--ink-strong);"></div>
+      <p class="note">Notice the visceral difference between Gaussian and box blur at the same kernel size. Both smooth, but Gaussian leaves something that still <em>looks</em> like a softened image, while box blur introduces faint horizontal/vertical streaks — those are exactly the frequency-domain nulls of §4, now visible as artefacts because images have content at every spatial frequency. The lessons of 1D filtering port over without modification.</p>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="s11">
+    <div class="copy">
+      <div class="section-num">§ 11</div>
+      <h2>Choosing your weapon</h2>
+      <p>Eleven sections in, you have everything you need to pick a filter for a job. The rule of thumb fits on a postcard:</p>
+      <ul>
+        <li><em>Need exact linear phase</em> (mastering, measurement, anything where waveform shape matters)? <em>FIR.</em> A symmetric kernel guarantees every frequency passes with the same delay.</li>
+        <li><em>Need very low latency</em> (live audio, sensors driving real-time visuals)? <em>IIR.</em> Two multiplies per sample, sub-millisecond delay.</li>
+        <li><em>Need a sharp band-pass or notch</em> at a specific frequency? <em>IIR biquad</em> with high Q. Just remember that high Q rings.</li>
+        <li><em>Need a wide-band smooth low-pass on cheap hardware</em> (microcontroller, embedded sensor)? <em>One-pole IIR.</em> Smaller than any FIR you could write.</li>
+        <li><em>Working with images</em>? <em>FIR.</em> 2D recursion is awkward; convolutional kernels are universal and library-supported everywhere.</li>
+        <li><em>Need to learn the kernel from data</em> (machine-learning style)? <em>FIR.</em> Convnets are stacks of trainable FIRs.</li>
+      </ul>
+      <p>The breath sensor that prompted this companion piece uses one IIR (the user's own one-pole low-pass, on the host) plus, inside its firmware, a 4-section biquad cascade with high Q — exactly the resonant structure §8 modelled. The sensor's apparent "5 second lag" was the same impulse-response ringing we just saw on the screen, paid for in the same currency: high Q, narrow passband, long settling.</p>
+    </div>
+    <div class="figure">
+      <div class="figure-title"><span>Figure 11 · the same operation, four jobs</span><span class="hint">hover for code</span></div>
+      <svg viewBox="0 0 720 360" class="figure-svg" style="height:340px;" aria-label="Decision diagram of FIR/IIR choices"></svg>
+      <p class="note">The four boxes above all do the same thing — multiply past samples by weights, add. They differ only in <em>which</em> samples (the input only, or the output too), <em>how many</em> (a few, or hundreds), and <em>what</em> the weights are. Once you've internalised that, "DSP filter" is a much smaller, friendlier topic than its reputation suggests.</p>
+    </div>
+  </section>
+
+  <div class="pull">
+    A filter is not a black box. It is six lines of multiply-and-accumulate, and a choice of weights. Everything else — the math, the frequency plots, the cookbook recipes — is documentation for what particular weights do. Once you can write the loop, you own the topic.
+  </div>
+
+  <footer>
+    <h3>Sources & provenance</h3>
+    <ul>
+      <li>Steven W. Smith, <em>The Scientist and Engineer's Guide to Digital Signal Processing</em> — free at <code>dspguide.com</code>. The reference for the windowed-sinc design, the running-average analysis, and the "longer kernel = sharper transition" tradeoff.</li>
+      <li>Robert Bristow-Johnson, <em>Audio EQ Cookbook</em> — the canonical reference for biquad coefficient formulas. Used in §8 verbatim.</li>
+      <li>Oppenheim & Schafer, <em>Discrete-Time Signal Processing</em>, 3rd ed. The pole-zero / z-plane material in §9 follows their treatment.</li>
+      <li>Julius O. Smith, <em>Introduction to Digital Filters</em> — for the FIR-vs-IIR comparison material in §7.</li>
+    </ul>
+    <h3>What this page assumes</h3>
+    <ul>
+      <li>All examples are computed live in your browser using single-precision floating-point (with one exception: the FFT-based frequency response uses double-precision JavaScript numbers). Real-world fixed-point implementations will look slightly different — overflow handling, gain staging — but the structural lessons are the same.</li>
+      <li>The audio examples synthesise their own test signals; nothing is loaded from disk. The 4 kHz "noise" tone in §6 is a sine, not actual broadband noise — it makes the attenuation easy to hear.</li>
+      <li>The image in §10 is procedurally generated (gradient + ring + diagonal stripes + speckle noise). Same operations on a photograph would look richer but tell the same story.</li>
+      <li>Section 9's "drag a pole" lets you place one pole; the conjugate is mirrored. Real biquads have two poles and two zeros; we've shown the more interesting half. Wikipedia's <em>Z-transform</em> article has the full story.</li>
+    </ul>
+    <h3>Model limits</h3>
+    <ul>
+      <li>The page treats <em>linear time-invariant</em> filters only. Adaptive filters (Wiener, LMS), nonlinear filters (median, bilateral), and multi-rate systems (decimators, polyphase) are entirely different beasts that share the convolution machinery but break some of its assumptions.</li>
+      <li>The "Q ≈ settling time × ω₀ / 2" rule from §8 is the second-order approximation — multi-section IIR cascades can ring for longer or shorter than this formula predicts, depending on how the sections are tuned.</li>
+      <li>"FIR has linear phase if its kernel is symmetric" is true. "Linear phase is always desirable" is not — in some applications (loudspeaker crossovers, real-time effect chains) the price of linear phase (latency) is worse than the inconvenience of nonlinear phase.</li>
+    </ul>
+    <h3>What you can do next</h3>
+    <ul>
+      <li>Read Smith's DSP Guide — it's free, beautifully paced, and goes deeper than this page in every direction.</li>
+      <li>For audio specifically: <code>dsp.stackexchange.com</code>, <code>kvraudio.com</code> forums, and Will Pirkle's <em>Designing Audio Effect Plugins in C++</em> are the practitioner canon.</li>
+      <li>For images: <em>Computer Vision: Algorithms and Applications</em> (Szeliski) covers 2D filtering in much more depth, including the move from convolutions to learned filters in modern computer vision.</li>
+      <li>Pair this with the companion piece <code>mmwave_explainer.html</code>: that's the same Q-vs-settling tradeoff playing out inside a real product, with consequences in milliseconds and millimetres.</li>
+    </ul>
+  </footer>
+</main>
+
+<script type="module">
+//
+// =========================================================================
+//   utilities
+// =========================================================================
+//
+const $ = (id) => document.getElementById(id);
+const TAU = Math.PI * 2;
+const REDUCED = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+const COLOR = {
+  ink: "#444",
+  inkStrong: "#2b2b2b",
+  muted: "#76716a",
+  line: "#c9c1b4",
+  lineDark: "#918879",
+  accent: "#c64d2e",
+  accent2: "#2f6f73",
+  accent3: "#6b5b95",
+  paper: "#fbfaf6",
+  panel: "#fffdf8",
+};
+
+function fit(canvas) {
+  const rect = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.max(1, Math.floor(rect.width * dpr));
+  canvas.height = Math.max(1, Math.floor(rect.height * dpr));
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return { ctx, w: rect.width, h: rect.height };
+}
+
+function axes(ctx, w, h, opts = {}) {
+  const padL = opts.padL ?? 46;
+  const padR = opts.padR ?? 14;
+  const padT = opts.padT ?? 22;
+  const padB = opts.padB ?? 30;
+  ctx.clearRect(0, 0, w, h);
+  ctx.strokeStyle = COLOR.lineDark;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(padL, padT);
+  ctx.lineTo(padL, h - padB);
+  ctx.lineTo(w - padR, h - padB);
+  ctx.stroke();
+  ctx.fillStyle = COLOR.muted;
+  ctx.font = "11px Helvetica, Arial, sans-serif";
+  if (opts.labelY) ctx.fillText(opts.labelY, 6, padT - 6);
+  if (opts.labelX) ctx.fillText(opts.labelX, w - padR - 50, h - 12);
+  return { padL, padR, padT, padB, plotW: w - padL - padR, plotH: h - padT - padB };
+}
+
+function plotLine(ctx, data, plot, w, h, opts) {
+  const { color, width = 2, yMin = -1, yMax = 1, alpha = 1, dashed = false } = opts;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  if (dashed) ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  const range = yMax - yMin;
+  data.forEach((v, i) => {
+    const x = plot.padL + (i / (data.length - 1)) * plot.plotW;
+    const y = h - plot.padB - ((v - yMin) / range) * plot.plotH;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+  ctx.restore();
+}
+
+// Naive O(N^2) DFT magnitude for small kernels — accurate, simple.
+function dftMag(h, K = 256) {
+  const mag = new Array(K);
+  for (let k = 0; k < K; k++) {
+    let re = 0, im = 0;
+    const w = Math.PI * k / (K - 1);   // 0 to π
+    for (let n = 0; n < h.length; n++) {
+      re += h[n] * Math.cos(w * n);
+      im += -h[n] * Math.sin(w * n);
+    }
+    mag[k] = Math.sqrt(re * re + im * im);
+  }
+  return mag;
+}
+
+// Frequency response in dB at a single normalized frequency f (cycles/sample).
+function freqResponseDb(h, f) {
+  let re = 0, im = 0;
+  const w = TAU * f;
+  for (let n = 0; n < h.length; n++) {
+    re += h[n] * Math.cos(w * n);
+    im += -h[n] * Math.sin(w * n);
+  }
+  const mag = Math.sqrt(re * re + im * im);
+  return 20 * Math.log10(Math.max(1e-6, mag));
+}
+
+//
+// =========================================================================
+//   § 1   running average
+// =========================================================================
+//
+const s1State = { N: 7, noise: 0.35 };
+
+function makeNoisySine(n = 240, freq = 0.04, noise = 0.35) {
+  const sine = [], noisy = [];
+  // Pre-generate noise so it's stable across redraws (otherwise it dances)
+  if (!makeNoisySine.cache) {
+    makeNoisySine.cache = Array.from({length: 600}, () => Math.random() - 0.5);
+  }
+  for (let i = 0; i < n; i++) {
+    const s = Math.sin(TAU * freq * i);
+    sine.push(s);
+    noisy.push(s + makeNoisySine.cache[i] * 2 * noise);
+  }
+  return { sine, noisy };
+}
+
+function runningAvg(x, N) {
+  const out = new Array(x.length);
+  for (let i = 0; i < x.length; i++) {
+    let sum = 0, count = 0;
+    for (let k = 0; k < N; k++) {
+      const idx = i - k;
+      if (idx >= 0) { sum += x[idx]; count++; }
+    }
+    out[i] = sum / Math.max(1, count);
+  }
+  return out;
+}
+
+function drawS1() {
+  const { ctx, w, h } = fit($("s1Canvas"));
+  const plot = axes(ctx, w, h, { labelY: "amplitude", labelX: "sample" });
+  const { sine, noisy } = makeNoisySine(240, 0.04, s1State.noise);
+  const filt = runningAvg(noisy, s1State.N);
+  // zero line
+  ctx.strokeStyle = "rgba(145,136,121,0.35)";
+  ctx.beginPath();
+  ctx.moveTo(plot.padL, plot.padT + plot.plotH/2);
+  ctx.lineTo(w - plot.padR, plot.padT + plot.plotH/2);
+  ctx.stroke();
+  plotLine(ctx, sine,  plot, w, h, { color: COLOR.inkStrong, width: 1.2, yMin: -2, yMax: 2, alpha: 0.45 });
+  plotLine(ctx, noisy, plot, w, h, { color: COLOR.accent,    width: 1.2, yMin: -2, yMax: 2, alpha: 0.85 });
+  plotLine(ctx, filt,  plot, w, h, { color: COLOR.accent2,   width: 2.4, yMin: -2, yMax: 2 });
+
+  $("s1NOut").textContent = String(s1State.N);
+  $("s1NoiseOut").textContent = s1State.noise.toFixed(2);
+}
+$("s1N").addEventListener("input", e => { s1State.N = +e.target.value; drawS1(); });
+$("s1Noise").addEventListener("input", e => { s1State.noise = +e.target.value; drawS1(); });
+
+//
+// =========================================================================
+//   § 2   convolution stepper
+// =========================================================================
+//
+const s2State = {
+  step: 0,
+  running: false,
+  kernel: 'avg5',
+  inputSig: [],
+};
+
+const s2Kernels = {
+  avg5:   [0.2, 0.2, 0.2, 0.2, 0.2],
+  ramp:   [0.111, 0.222, 0.333, 0.222, 0.111],
+  diff:   [1, -1],
+  sharp:  [-1, 3, -1],
+};
+
+function makeS2Input() {
+  // A nice gentle bumpy signal, length 32
+  const n = 32;
+  const out = new Array(n);
+  for (let i = 0; i < n; i++) {
+    out[i] = Math.sin(i * 0.4) * 0.7 + Math.sin(i * 0.18) * 0.3;
+  }
+  // Add a sharp bump in the middle for visual interest.
+  for (let i = 12; i < 16; i++) out[i] += 0.5;
+  return out;
+}
+
+function drawS2() {
+  const { ctx, w, h } = fit($("s2Canvas"));
+  ctx.clearRect(0, 0, w, h);
+
+  const x = s2State.inputSig;
+  const k = s2Kernels[s2State.kernel];
+  const N = x.length;
+  const M = k.length;
+  const cellW = (w - 60) / N;
+  const yKernel = 30;
+  const yInput  = 130;
+  const yOutput = 250;
+
+  // Compute the output up to the current step (inclusive).
+  const out = new Array(N).fill(0);
+  for (let i = 0; i <= s2State.step && i < N; i++) {
+    let acc = 0;
+    for (let kk = 0; kk < M; kk++) if (i - kk >= 0) acc += k[kk] * x[i - kk];
+    out[i] = acc;
+  }
+
+  // Draw input row.
+  ctx.fillStyle = COLOR.muted;
+  ctx.font = "11px Helvetica, Arial, sans-serif";
+  ctx.fillText("input", 6, yInput - 28);
+  for (let i = 0; i < N; i++) {
+    const cx = 30 + i * cellW;
+    const valNorm = (x[i] + 1.5) / 3;
+    ctx.fillStyle = `rgba(47,111,115,${0.2 + valNorm * 0.7})`;
+    ctx.fillRect(cx, yInput, cellW - 1, 50);
+    // marker bar inside cell
+    const barH = Math.abs(x[i]) / 1.5 * 22;
+    ctx.fillStyle = COLOR.accent2;
+    ctx.fillRect(cx + 1, yInput + 25 - (x[i] > 0 ? barH : 0), cellW - 3, barH);
+  }
+  ctx.strokeStyle = COLOR.lineDark;
+  ctx.strokeRect(30, yInput, N * cellW - 1, 50);
+
+  // Draw kernel as a sliding bar.
+  ctx.fillStyle = COLOR.muted;
+  ctx.fillText("kernel (slides right)", 6, yKernel - 8);
+  const kernelStartIdx = s2State.step - M + 1;
+  for (let kk = 0; kk < M; kk++) {
+    const idx = s2State.step - kk;
+    if (idx < 0 || idx >= N) continue;
+    const cx = 30 + idx * cellW;
+    ctx.fillStyle = COLOR.accent;
+    ctx.globalAlpha = 0.2 + Math.abs(k[kk]) * 0.6;
+    ctx.fillRect(cx, yKernel, cellW - 1, 50);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = COLOR.inkStrong;
+    ctx.font = "11px SFMono-Regular, monospace";
+    ctx.fillText(k[kk].toFixed(2).replace("0.", "."), cx + 4, yKernel + 28);
+  }
+  ctx.strokeStyle = COLOR.accent;
+  const kx0 = 30 + Math.max(0, kernelStartIdx) * cellW;
+  const kx1 = 30 + (Math.min(N - 1, s2State.step) + 1) * cellW;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(kx0, yKernel, kx1 - kx0 - 1, 50);
+
+  // Draw output row.
+  ctx.fillStyle = COLOR.muted;
+  ctx.font = "11px Helvetica, Arial, sans-serif";
+  ctx.fillText("output (= multiply-and-sum at each position)", 6, yOutput - 8);
+  const yOutBase = yOutput + 25;
+  ctx.strokeStyle = "rgba(145,136,121,0.5)";
+  ctx.beginPath();
+  ctx.moveTo(30, yOutBase);
+  ctx.lineTo(30 + N * cellW - 1, yOutBase);
+  ctx.stroke();
+  ctx.fillStyle = COLOR.accent2;
+  for (let i = 0; i < N; i++) {
+    if (i > s2State.step) continue;
+    const cx = 30 + i * cellW;
+    const v = out[i];
+    const barH = Math.abs(v) * 22;
+    ctx.fillRect(cx + 1, v > 0 ? yOutBase - barH : yOutBase, cellW - 3, barH);
+  }
+  ctx.strokeStyle = COLOR.lineDark;
+  ctx.strokeRect(30, yOutput, N * cellW - 1, 50);
+
+  // Highlight the current output cell with an arrow from kernel sum.
+  if (s2State.step >= 0 && s2State.step < N) {
+    const cx = 30 + s2State.step * cellW + cellW / 2;
+    ctx.strokeStyle = COLOR.accent;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.moveTo(cx, yKernel + 50);
+    ctx.lineTo(cx, yOutput - 4);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // Step count overlay.
+  ctx.fillStyle = COLOR.ink;
+  ctx.font = "12px Helvetica, Arial, sans-serif";
+  ctx.fillText(`step ${Math.max(0, s2State.step + 1)} / ${N}`, w - 100, h - 10);
+}
+
+s2State.inputSig = makeS2Input();
+$("s2Step").addEventListener("click", () => { if (s2State.step < s2State.inputSig.length - 1) s2State.step++; drawS2(); });
+$("s2Reset").addEventListener("click", () => { s2State.step = -1; s2State.running = false; $("s2Play").textContent = "Run"; drawS2(); });
+$("s2Play").addEventListener("click", () => {
+  s2State.running = !s2State.running;
+  $("s2Play").textContent = s2State.running ? "Pause" : "Run";
+});
+$("s2Kernel").addEventListener("change", e => { s2State.kernel = e.target.value; s2State.step = -1; drawS2(); });
+
+function s2Tick() {
+  if (s2State.running) {
+    if (s2State.step < s2State.inputSig.length - 1) {
+      s2State.step++;
+      drawS2();
+    } else {
+      s2State.running = false;
+      $("s2Play").textContent = "Run";
+    }
+  }
+  setTimeout(s2Tick, 220);
+}
+s2State.step = -1;
+
+//
+// =========================================================================
+//   § 3   impulse stamping
+// =========================================================================
+//
+const s3State = {
+  impulses: [],          // array of {idx, sign}
+  kernel: 'hann',
+};
+
+const s3Kernels = {
+  hann:  Array.from({length: 11}, (_, i) => 0.5 - 0.5 * Math.cos(TAU * i / 10)),
+  echo:  [1, 0, 0, 0.6, 0, 0, 0.36, 0, 0, 0.21],
+  diff:  [1, -1],
+};
+
+function drawS3() {
+  const { ctx, w, h } = fit($("s3Canvas"));
+  ctx.clearRect(0, 0, w, h);
+
+  const N = 80;
+  const cellW = (w - 60) / N;
+
+  // input row
+  const yIn = 50, yOut = 200;
+  const inputArr = new Array(N).fill(0);
+  for (const imp of s3State.impulses) inputArr[imp.idx] = imp.sign;
+
+  ctx.fillStyle = COLOR.muted;
+  ctx.font = "11px Helvetica, Arial, sans-serif";
+  ctx.fillText("input — click to place an impulse", 30, yIn - 28);
+  // input baseline
+  ctx.strokeStyle = "rgba(145,136,121,0.5)";
+  ctx.beginPath();
+  ctx.moveTo(30, yIn + 30);
+  ctx.lineTo(30 + N * cellW, yIn + 30);
+  ctx.stroke();
+  // impulses
+  for (const imp of s3State.impulses) {
+    const cx = 30 + imp.idx * cellW + cellW / 2;
+    ctx.strokeStyle = COLOR.accent;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cx, yIn + 30);
+    ctx.lineTo(cx, yIn + 30 - imp.sign * 28);
+    ctx.stroke();
+    ctx.fillStyle = COLOR.accent;
+    ctx.beginPath();
+    ctx.arc(cx, yIn + 30 - imp.sign * 28, 4, 0, TAU);
+    ctx.fill();
+  }
+
+  // output row: stamp kernel at each impulse location, accumulate.
+  const k = s3Kernels[s3State.kernel];
+  const out = new Array(N).fill(0);
+  for (const imp of s3State.impulses) {
+    for (let j = 0; j < k.length; j++) {
+      const idx = imp.idx + j;
+      if (idx >= 0 && idx < N) out[idx] += imp.sign * k[j];
+    }
+  }
+
+  ctx.fillStyle = COLOR.muted;
+  ctx.fillText("output — kernel stamped at each impulse, sums where they overlap", 30, yOut - 8);
+  ctx.strokeStyle = "rgba(145,136,121,0.5)";
+  ctx.beginPath();
+  ctx.moveTo(30, yOut + 50);
+  ctx.lineTo(30 + N * cellW, yOut + 50);
+  ctx.stroke();
+
+  ctx.strokeStyle = COLOR.accent2;
+  ctx.lineWidth = 2.4;
+  ctx.beginPath();
+  for (let i = 0; i < N; i++) {
+    const x = 30 + i * cellW + cellW / 2;
+    const y = yOut + 50 - out[i] * 36;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+  // also fill area
+  ctx.fillStyle = "rgba(47,111,115,0.18)";
+  ctx.beginPath();
+  ctx.moveTo(30, yOut + 50);
+  for (let i = 0; i < N; i++) {
+    const x = 30 + i * cellW + cellW / 2;
+    const y = yOut + 50 - out[i] * 36;
+    ctx.lineTo(x, y);
+  }
+  ctx.lineTo(30 + N * cellW, yOut + 50);
+  ctx.closePath();
+  ctx.fill();
+
+  // axis ticks for input row
+  ctx.fillStyle = COLOR.muted;
+  ctx.font = "10px Helvetica, Arial, sans-serif";
+  for (let t = 0; t <= 80; t += 20) {
+    const cx = 30 + t * cellW;
+    ctx.fillText(`${t}`, cx - 6, yIn + 50);
+  }
+}
+
+$("s3Canvas").addEventListener("click", (e) => {
+  const rect = $("s3Canvas").getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const cellW = (rect.width - 60) / 80;
+  const idx = Math.floor((x - 30) / cellW);
+  if (idx < 0 || idx >= 80) return;
+  s3State.impulses.push({ idx, sign: 1 });
+  drawS3();
+});
+$("s3Clear").addEventListener("click", () => { s3State.impulses = []; drawS3(); });
+$("s3Demo").addEventListener("click", () => {
+  s3State.impulses = [
+    { idx: 8, sign: 1 }, { idx: 22, sign: 1 }, { idx: 27, sign: 1 },
+    { idx: 50, sign: 0.6 }, { idx: 55, sign: -0.7 },
+  ];
+  drawS3();
+});
+$("s3Kernel").addEventListener("change", e => { s3State.kernel = e.target.value; drawS3(); });
+
+//
+// =========================================================================
+//   § 4   time vs. frequency view
+// =========================================================================
+//
+const s4State = { N: 9 };
+
+function drawS4() {
+  const { ctx, w, h } = fit($("s4Canvas"));
+  ctx.clearRect(0, 0, w, h);
+
+  const split = w * 0.5;
+  const N = s4State.N;
+  const kernel = Array.from({length: N}, () => 1 / N);
+
+  // ---- left: kernel time ----
+  const padL = 50, padT = 28, padB = 40;
+  const plotH = h - padT - padB;
+  ctx.strokeStyle = COLOR.lineDark;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(padL, padT); ctx.lineTo(padL, h - padB); ctx.lineTo(split - 16, h - padB);
+  ctx.stroke();
+  ctx.fillStyle = COLOR.muted;
+  ctx.font = "11px Helvetica, Arial, sans-serif";
+  ctx.fillText(`kernel (length ${N})`, padL + 4, padT - 6);
+  ctx.fillText("sample index", split - 80, h - padB + 14);
+
+  // baseline for time plot
+  ctx.strokeStyle = "rgba(145,136,121,0.4)";
+  ctx.beginPath();
+  ctx.moveTo(padL, h - padB - 20); ctx.lineTo(split - 16, h - padB - 20);
+  ctx.stroke();
+
+  // bars
+  const barW = (split - padL - 20) / Math.max(N, 9);
+  ctx.fillStyle = COLOR.accent;
+  for (let i = 0; i < N; i++) {
+    const x = padL + 4 + i * barW;
+    const barH = kernel[i] * (plotH - 30) * 4;
+    ctx.fillRect(x, h - padB - 20 - barH, barW - 2, barH);
+  }
+
+  // ---- right: frequency response (log magnitude) ----
+  const rPadL = split + 20, rPadR = 14;
+  const rPlotW = w - rPadL - rPadR;
+  ctx.strokeStyle = COLOR.lineDark;
+  ctx.beginPath();
+  ctx.moveTo(rPadL, padT); ctx.lineTo(rPadL, h - padB); ctx.lineTo(w - rPadR, h - padB);
+  ctx.stroke();
+  ctx.fillStyle = COLOR.muted;
+  ctx.fillText("frequency response (linear scale, 0..fs/2)", rPadL + 4, padT - 6);
+  ctx.fillText("0 Hz", rPadL - 8, h - padB + 14);
+  ctx.fillText("fs/2", w - rPadR - 22, h - padB + 14);
+
+  const mag = dftMag(kernel, 200);
+  // Normalize so DC = 1
+  const dc = mag[0];
+  const norm = mag.map(m => m / dc);
+
+  ctx.strokeStyle = COLOR.accent2;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let i = 0; i < norm.length; i++) {
+    const x = rPadL + (i / (norm.length - 1)) * rPlotW;
+    const y = h - padB - norm[i] * plotH * 0.92;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // Mark nulls (where the running average's magnitude touches zero)
+  ctx.fillStyle = COLOR.accent;
+  ctx.font = "10px Helvetica, Arial, sans-serif";
+  for (let k = 1; k < N; k++) {
+    const f = k / N; // normalized freq of null (cycles/sample, but plot is 0..0.5)
+    if (f > 0.5) break;
+    const x = rPadL + (f / 0.5) * rPlotW;
+    ctx.beginPath(); ctx.arc(x, h - padB, 4, 0, TAU); ctx.fill();
+    ctx.fillText(`fs/${N}${k > 1 ? "·" + k : ""}`, x - 12, h - padB + 24);
+  }
+
+  $("s4NOut").textContent = String(N);
+}
+
+$("s4N").addEventListener("input", e => { s4State.N = +e.target.value; drawS4(); });
+
+//
+// =========================================================================
+//   § 5   windowed sinc design
+// =========================================================================
+//
+const s5State = { cutoff: 0.20, M: 51, win: 'rect' };
+
+function windowedSinc(cutoff, M, win) {
+  const h = new Array(M);
+  const mid = (M - 1) / 2;
+  for (let n = 0; n < M; n++) {
+    const k = n - mid;
+    h[n] = k === 0 ? 2 * cutoff : Math.sin(TAU * cutoff * k) / (Math.PI * k);
+    let wval = 1;
+    if (win === 'hann')      wval = 0.5 - 0.5 * Math.cos(TAU * n / (M - 1));
+    if (win === 'blackman')  wval = 0.42 - 0.5 * Math.cos(TAU * n / (M - 1)) + 0.08 * Math.cos(2 * TAU * n / (M - 1));
+    h[n] *= wval;
+  }
+  // normalize DC gain to 1
+  const sum = h.reduce((a, b) => a + b, 0);
+  return h.map(x => x / sum);
+}
+
+function drawS5() {
+  const { ctx, w, h } = fit($("s5Canvas"));
+  ctx.clearRect(0, 0, w, h);
+
+  const split = w * 0.5;
+  const kernel = windowedSinc(s5State.cutoff, s5State.M, s5State.win);
+
+  // ---- left: kernel time ----
+  const padL = 50, padT = 28, padB = 40;
+  const plotH = h - padT - padB;
+  ctx.strokeStyle = COLOR.lineDark;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(padL, padT); ctx.lineTo(padL, h - padB); ctx.lineTo(split - 16, h - padB);
+  ctx.stroke();
+  ctx.fillStyle = COLOR.muted;
+  ctx.font = "11px Helvetica, Arial, sans-serif";
+  ctx.fillText(`kernel · ${s5State.M} taps · ${s5State.win}`, padL + 4, padT - 6);
+
+  // baseline (since kernel has negative excursions for sinc)
+  const yBase = padT + plotH / 2;
+  ctx.strokeStyle = "rgba(145,136,121,0.5)";
+  ctx.beginPath();
+  ctx.moveTo(padL, yBase); ctx.lineTo(split - 16, yBase);
+  ctx.stroke();
+
+  // plot kernel
+  const kMax = Math.max(...kernel.map(Math.abs));
+  ctx.strokeStyle = COLOR.accent;
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  for (let i = 0; i < kernel.length; i++) {
+    const x = padL + 4 + (i / (kernel.length - 1)) * (split - padL - 20);
+    const y = yBase - (kernel[i] / kMax) * plotH * 0.42;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // ---- right: frequency response in dB ----
+  const rPadL = split + 20, rPadR = 14;
+  const rPlotW = w - rPadL - rPadR;
+  ctx.strokeStyle = COLOR.lineDark;
+  ctx.beginPath();
+  ctx.moveTo(rPadL, padT); ctx.lineTo(rPadL, h - padB); ctx.lineTo(w - rPadR, h - padB);
+  ctx.stroke();
+  ctx.fillStyle = COLOR.muted;
+  ctx.fillText("|H(f)| in dB (0 to -90 dB)", rPadL + 4, padT - 6);
+  ctx.fillText("0", rPadL - 8, h - padB + 14);
+  ctx.fillText("0.5", w - rPadR - 12, h - padB + 14);
+
+  // dB grid
+  ctx.fillStyle = COLOR.muted;
+  ctx.font = "9px Helvetica, Arial, sans-serif";
+  ctx.strokeStyle = "rgba(145,136,121,0.25)";
+  for (const dbTick of [0, -20, -40, -60, -80]) {
+    const y = padT + ((-dbTick) / 90) * plotH;
+    ctx.beginPath();
+    ctx.moveTo(rPadL, y); ctx.lineTo(w - rPadR, y);
+    ctx.stroke();
+    ctx.fillText(`${dbTick}`, rPadL - 18, y + 3);
+  }
+
+  // cutoff line
+  const xCut = rPadL + (s5State.cutoff / 0.5) * rPlotW;
+  ctx.strokeStyle = COLOR.accent;
+  ctx.setLineDash([3, 3]);
+  ctx.beginPath();
+  ctx.moveTo(xCut, padT); ctx.lineTo(xCut, h - padB);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  const fr = dftMag(kernel, 400);
+  ctx.strokeStyle = COLOR.accent2;
+  ctx.lineWidth = 1.8;
+  ctx.beginPath();
+  for (let i = 0; i < fr.length; i++) {
+    const f = (i / (fr.length - 1)) * 0.5;
+    const db = 20 * Math.log10(Math.max(1e-6, fr[i]));
+    const x = rPadL + (f / 0.5) * rPlotW;
+    const y = padT + ((-db) / 90) * plotH;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  $("s5CutoffOut").textContent = s5State.cutoff.toFixed(2);
+  $("s5MOut").textContent = String(s5State.M);
+}
+
+$("s5Cutoff").addEventListener("input", e => { s5State.cutoff = +e.target.value; drawS5(); });
+$("s5M").addEventListener("input", e => { s5State.M = +e.target.value; drawS5(); });
+document.querySelectorAll("#s5Window button").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("#s5Window button").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    s5State.win = btn.dataset.win;
+    drawS5();
+  });
+});
+
+//
+// =========================================================================
+//   § 6   audible tradeoff
+// =========================================================================
+//
+const FS_AUDIO = 44100;
+const s6State = { M: 51, cutoff: 1200, audioCtx: null, source: null };
+
+function drawS6() {
+  const { ctx, w, h } = fit($("s6Canvas"));
+  const plot = axes(ctx, w, h, { labelY: "|H(f)| dB", labelX: "frequency (Hz)" });
+
+  const kernel = windowedSinc(s6State.cutoff / FS_AUDIO, s6State.M, 'hann');
+  const FMAX = 6000;
+
+  // dB grid
+  ctx.strokeStyle = "rgba(145,136,121,0.25)";
+  ctx.fillStyle = COLOR.muted;
+  ctx.font = "10px Helvetica, Arial, sans-serif";
+  for (const dbTick of [0, -20, -40, -60, -80]) {
+    const y = plot.padT + ((-dbTick) / 90) * plot.plotH;
+    ctx.beginPath();
+    ctx.moveTo(plot.padL, y); ctx.lineTo(w - plot.padR, y);
+    ctx.stroke();
+    ctx.fillText(`${dbTick}`, 8, y + 3);
+  }
+  for (let f = 0; f <= FMAX; f += 1000) {
+    const x = plot.padL + (f / FMAX) * plot.plotW;
+    ctx.fillText(`${f / 1000}k`, x - 6, h - plot.padB + 14);
+  }
+
+  // frequency response curve
+  const N = 800;
+  ctx.strokeStyle = COLOR.accent2;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let i = 0; i < N; i++) {
+    const f = (i / (N - 1)) * FMAX;
+    const db = freqResponseDb(kernel, f / FS_AUDIO);
+    const x = plot.padL + (f / FMAX) * plot.plotW;
+    const y = plot.padT + ((-db) / 90) * plot.plotH;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // Mark cutoff
+  const xCut = plot.padL + (s6State.cutoff / FMAX) * plot.plotW;
+  ctx.strokeStyle = COLOR.lineDark;
+  ctx.setLineDash([3, 3]);
+  ctx.beginPath();
+  ctx.moveTo(xCut, plot.padT); ctx.lineTo(xCut, h - plot.padB);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Mark the two test tones.
+  function markTone(f, color, label) {
+    const x = plot.padL + (f / FMAX) * plot.plotW;
+    const db = freqResponseDb(kernel, f / FS_AUDIO);
+    const y = plot.padT + ((-db) / 90) * plot.plotH;
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.arc(x, y, 6, 0, TAU); ctx.fill();
+    ctx.fillStyle = COLOR.inkStrong;
+    ctx.font = "11px Helvetica, Arial, sans-serif";
+    ctx.fillText(label, x - 16, y - 10);
+  }
+  markTone(440, COLOR.accent, "440 Hz");
+  markTone(4000, COLOR.accent3, "4 kHz");
+
+  // Readouts
+  $("s6MOut").textContent = String(s6State.M);
+  $("s6CutoffOut").textContent = `${s6State.cutoff} Hz`;
+  $("s6LatRead").textContent = `${(((s6State.M - 1) / 2) / FS_AUDIO * 1000).toFixed(2)} ms`;
+  $("s6Atten").textContent = `${freqResponseDb(kernel, 4000 / FS_AUDIO).toFixed(0)} dB`;
+  $("s6Trans").textContent = `${(4 * FS_AUDIO / s6State.M).toFixed(0)} Hz`;
+}
+
+$("s6M").addEventListener("input", e => { s6State.M = +e.target.value; drawS6(); });
+$("s6Cutoff").addEventListener("input", e => { s6State.cutoff = +e.target.value; drawS6(); });
+
+function ensureAudio() {
+  if (!s6State.audioCtx) s6State.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return s6State.audioCtx;
+}
+
+function stopAudio() {
+  if (s6State.source) { try { s6State.source.stop(); } catch (e) {} s6State.source = null; }
+}
+
+$("s6Play").addEventListener("click", async () => {
+  stopAudio();
+  const ac = ensureAudio();
+  await ac.resume();
+  const dur = 3.0;
+  const N = Math.floor(FS_AUDIO * dur);
+  const buf = ac.createBuffer(1, N, FS_AUDIO);
+  const ch = buf.getChannelData(0);
+  // input: 440 + 4000
+  const sig = new Float32Array(N);
+  for (let i = 0; i < N; i++) {
+    sig[i] = 0.4 * Math.sin(TAU * 440 * i / FS_AUDIO) + 0.4 * Math.sin(TAU * 4000 * i / FS_AUDIO);
+  }
+  // FIR filter
+  const kernel = windowedSinc(s6State.cutoff / FS_AUDIO, s6State.M, 'hann');
+  const M = kernel.length;
+  for (let i = 0; i < N; i++) {
+    let acc = 0;
+    for (let k = 0; k < M; k++) {
+      const idx = i - k;
+      if (idx >= 0) acc += kernel[k] * sig[idx];
+    }
+    ch[i] = acc;
+  }
+  // gentle fade in/out
+  const fade = Math.floor(0.05 * FS_AUDIO);
+  for (let i = 0; i < fade; i++) {
+    ch[i] *= i / fade;
+    ch[N - 1 - i] *= i / fade;
+  }
+  const src = ac.createBufferSource();
+  src.buffer = buf;
+  const gain = ac.createGain(); gain.gain.value = 0.4;
+  src.connect(gain); gain.connect(ac.destination);
+  src.start();
+  s6State.source = src;
+});
+$("s6Stop").addEventListener("click", stopAudio);
+
+//
+// =========================================================================
+//   § 7   FIR vs IIR comparison
+// =========================================================================
+//
+const s7State = { cutoff: 0.10 };
+
+function drawS7() {
+  const { ctx, w, h } = fit($("s7Canvas"));
+  const plot = axes(ctx, w, h, { labelY: "|H(f)| dB", labelX: "normalized freq (0..0.5)" });
+
+  // FIR: 101-tap Hann sinc.
+  const fir = windowedSinc(s7State.cutoff, 101, 'hann');
+  // IIR: 1-pole. alpha derived from cutoff.
+  const alpha = 1 - Math.exp(-TAU * s7State.cutoff);
+
+  // dB grid
+  ctx.strokeStyle = "rgba(145,136,121,0.25)";
+  ctx.fillStyle = COLOR.muted;
+  ctx.font = "10px Helvetica, Arial, sans-serif";
+  for (const dbTick of [0, -20, -40, -60, -80]) {
+    const y = plot.padT + ((-dbTick) / 90) * plot.plotH;
+    ctx.beginPath();
+    ctx.moveTo(plot.padL, y); ctx.lineTo(w - plot.padR, y);
+    ctx.stroke();
+    ctx.fillText(`${dbTick}`, 8, y + 3);
+  }
+
+  // FIR curve
+  const N = 400;
+  ctx.strokeStyle = COLOR.accent;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let i = 0; i < N; i++) {
+    const f = (i / (N - 1)) * 0.5;
+    const db = freqResponseDb(fir, f);
+    const x = plot.padL + (f / 0.5) * plot.plotW;
+    const y = plot.padT + ((-db) / 90) * plot.plotH;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // IIR curve: |H(z)| = alpha / sqrt((1 - (1-alpha)cos w)^2 + ((1-alpha) sin w)^2)
+  ctx.strokeStyle = COLOR.accent2;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let i = 0; i < N; i++) {
+    const f = (i / (N - 1)) * 0.5;
+    const w_ = TAU * f;
+    const re = 1 - (1 - alpha) * Math.cos(w_);
+    const im = (1 - alpha) * Math.sin(w_);
+    const mag = alpha / Math.sqrt(re * re + im * im);
+    const db = 20 * Math.log10(Math.max(1e-6, mag));
+    const x = plot.padL + (f / 0.5) * plot.plotW;
+    const y = plot.padT + ((-db) / 90) * plot.plotH;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // Mark cutoff
+  const xCut = plot.padL + (s7State.cutoff / 0.5) * plot.plotW;
+  ctx.strokeStyle = COLOR.lineDark;
+  ctx.setLineDash([3, 3]);
+  ctx.beginPath();
+  ctx.moveTo(xCut, plot.padT); ctx.lineTo(xCut, h - plot.padB);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = COLOR.muted;
+  ctx.fillText("cutoff", xCut + 4, plot.padT + 12);
+
+  // Readouts
+  $("s7CutoffOut").textContent = s7State.cutoff.toFixed(3);
+  const dbFir = freqResponseDb(fir, s7State.cutoff);
+  // IIR at the same f
+  const wf = TAU * s7State.cutoff;
+  const re = 1 - (1 - alpha) * Math.cos(wf);
+  const im = (1 - alpha) * Math.sin(wf);
+  const dbIir = 20 * Math.log10(alpha / Math.sqrt(re * re + im * im));
+  $("s7Diff").textContent = `${(dbFir - dbIir).toFixed(2)} dB`;
+}
+
+$("s7Cutoff").addEventListener("input", e => { s7State.cutoff = +e.target.value; drawS7(); });
+
+//
+// =========================================================================
+//   § 8   biquad band-pass
+// =========================================================================
+//
+const s8State = { Q: 3.0, f0: 800, audioCtx: null, source: null };
+
+function biquadBPF(f0, Q, fs) {
+  const w0 = TAU * f0 / fs;
+  const alpha = Math.sin(w0) / (2 * Q);
+  const cosw0 = Math.cos(w0);
+  const a0 = 1 + alpha;
+  return {
+    b0: alpha / a0, b1: 0, b2: -alpha / a0,
+    a1: -2 * cosw0 / a0, a2: (1 - alpha) / a0,
+  };
+}
+
+function biquadFreqResp(c, f, fs) {
+  const w_ = TAU * f / fs;
+  const cosw = Math.cos(w_), sinw = Math.sin(w_);
+  const cos2 = Math.cos(2 * w_), sin2 = Math.sin(2 * w_);
+  const numRe = c.b0 + c.b1 * cosw + c.b2 * cos2;
+  const numIm = -(c.b1 * sinw + c.b2 * sin2);
+  const denRe = 1 + c.a1 * cosw + c.a2 * cos2;
+  const denIm = -(c.a1 * sinw + c.a2 * sin2);
+  const numMag = Math.sqrt(numRe * numRe + numIm * numIm);
+  const denMag = Math.sqrt(denRe * denRe + denIm * denIm);
+  return numMag / denMag;
+}
+
+function biquadImpulseResponse(c, n) {
+  const out = new Array(n).fill(0);
+  let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+  for (let i = 0; i < n; i++) {
+    const x = i === 0 ? 1 : 0;
+    const y = c.b0 * x + c.b1 * x1 + c.b2 * x2 - c.a1 * y1 - c.a2 * y2;
+    out[i] = y;
+    x2 = x1; x1 = x;
+    y2 = y1; y1 = y;
+  }
+  return out;
+}
+
+function drawS8() {
+  const { ctx, w, h } = fit($("s8Canvas"));
+  ctx.clearRect(0, 0, w, h);
+
+  const split = w * 0.5;
+  const c = biquadBPF(s8State.f0, s8State.Q, FS_AUDIO);
+
+  // ---- left: frequency response ----
+  const padL = 50, padT = 28, padB = 40;
+  const plotH = h - padT - padB;
+  ctx.strokeStyle = COLOR.lineDark;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(padL, padT); ctx.lineTo(padL, h - padB); ctx.lineTo(split - 16, h - padB);
+  ctx.stroke();
+  ctx.fillStyle = COLOR.muted;
+  ctx.font = "11px Helvetica, Arial, sans-serif";
+  ctx.fillText("|H(f)|, log frequency, dB", padL + 4, padT - 6);
+
+  ctx.strokeStyle = "rgba(145,136,121,0.25)";
+  for (const dbTick of [0, -20, -40, -60]) {
+    const y = padT + ((10 - dbTick) / 70) * plotH;
+    ctx.beginPath();
+    ctx.moveTo(padL, y); ctx.lineTo(split - 16, y);
+    ctx.stroke();
+    ctx.fillStyle = COLOR.muted;
+    ctx.font = "9px Helvetica, Arial, sans-serif";
+    ctx.fillText(`${dbTick}`, 14, y + 3);
+  }
+
+  const fmin = 50, fmax = 8000;
+  const N = 400;
+  ctx.strokeStyle = COLOR.accent;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  let peakDb = -100;
+  for (let i = 0; i < N; i++) {
+    const f = fmin * Math.pow(fmax / fmin, i / (N - 1));
+    const m = biquadFreqResp(c, f, FS_AUDIO);
+    const db = 20 * Math.log10(Math.max(1e-6, m));
+    if (db > peakDb) peakDb = db;
+    const x = padL + (i / (N - 1)) * (split - padL - 20);
+    const y = padT + ((10 - db) / 70) * plotH;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+  // f0 line
+  const xF0 = padL + (Math.log(s8State.f0 / fmin) / Math.log(fmax / fmin)) * (split - padL - 20);
+  ctx.strokeStyle = COLOR.lineDark;
+  ctx.setLineDash([3, 3]);
+  ctx.beginPath();
+  ctx.moveTo(xF0, padT); ctx.lineTo(xF0, h - padB);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // ---- right: impulse response ----
+  const rPadL = split + 20, rPadR = 14;
+  const rPlotW = w - rPadL - rPadR;
+  const irLen = Math.round(0.3 * FS_AUDIO / 100); // show ~300 samples
+  const ir = biquadImpulseResponse(c, irLen * 4); // get more so we can taper view
+  ctx.strokeStyle = COLOR.lineDark;
+  ctx.beginPath();
+  ctx.moveTo(rPadL, padT); ctx.lineTo(rPadL, h - padB); ctx.lineTo(w - rPadR, h - padB);
+  ctx.stroke();
+  ctx.fillStyle = COLOR.muted;
+  ctx.font = "11px Helvetica, Arial, sans-serif";
+  ctx.fillText("impulse response (time)", rPadL + 4, padT - 6);
+
+  // baseline
+  const yMid = padT + plotH / 2;
+  ctx.strokeStyle = "rgba(145,136,121,0.5)";
+  ctx.beginPath();
+  ctx.moveTo(rPadL, yMid); ctx.lineTo(w - rPadR, yMid);
+  ctx.stroke();
+
+  const irMax = Math.max(...ir.map(Math.abs)) || 1;
+  const showLen = Math.min(ir.length, 400);
+  ctx.strokeStyle = COLOR.accent2;
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  for (let i = 0; i < showLen; i++) {
+    const x = rPadL + (i / (showLen - 1)) * rPlotW;
+    const y = yMid - (ir[i] / irMax) * plotH * 0.42;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // Estimate ring-time: when |IR| has dropped below 1% of peak.
+  let ringSamples = ir.length;
+  for (let i = ir.length - 1; i >= 0; i--) {
+    if (Math.abs(ir[i]) > 0.01 * irMax) { ringSamples = i; break; }
+  }
+
+  // BW3 = f0/Q
+  $("s8QOut").textContent = s8State.Q.toFixed(1);
+  $("s8F0Out").textContent = `${s8State.f0} Hz`;
+  $("s8Bw").textContent = `${(s8State.f0 / s8State.Q).toFixed(0)} Hz`;
+  $("s8Ring").textContent = `${(ringSamples / FS_AUDIO * 1000).toFixed(0)} ms`;
+  $("s8Peak").textContent = `${peakDb.toFixed(1)} dB`;
+}
+
+$("s8Q").addEventListener("input", e => { s8State.Q = +e.target.value; drawS8(); });
+$("s8F0").addEventListener("input", e => { s8State.f0 = +e.target.value; drawS8(); });
+
+function s8EnsureAudio() {
+  if (!s8State.audioCtx) s8State.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return s8State.audioCtx;
+}
+function s8StopAudio() {
+  if (s8State.source) { try { s8State.source.stop(); } catch (e) {} s8State.source = null; }
+}
+
+$("s8Play").addEventListener("click", async () => {
+  s8StopAudio();
+  const ac = s8EnsureAudio();
+  await ac.resume();
+  const dur = 1.5;
+  const N = Math.floor(FS_AUDIO * dur);
+  const c = biquadBPF(s8State.f0, s8State.Q, FS_AUDIO);
+  const buf = ac.createBuffer(1, N, FS_AUDIO);
+  const ch = buf.getChannelData(0);
+  let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+  for (let i = 0; i < N; i++) {
+    const x = i === 0 ? 1 : 0;
+    const y = c.b0 * x + c.b1 * x1 + c.b2 * x2 - c.a1 * y1 - c.a2 * y2;
+    ch[i] = y * 0.7;
+    x2 = x1; x1 = x;
+    y2 = y1; y1 = y;
+  }
+  const src = ac.createBufferSource();
+  src.buffer = buf;
+  const gain = ac.createGain(); gain.gain.value = 0.6;
+  src.connect(gain); gain.connect(ac.destination);
+  src.start();
+  s8State.source = src;
+});
+
+$("s8PlayNoise").addEventListener("click", async () => {
+  s8StopAudio();
+  const ac = s8EnsureAudio();
+  await ac.resume();
+  const dur = 2.5;
+  const N = Math.floor(FS_AUDIO * dur);
+  const c = biquadBPF(s8State.f0, s8State.Q, FS_AUDIO);
+  const buf = ac.createBuffer(1, N, FS_AUDIO);
+  const ch = buf.getChannelData(0);
+  let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+  for (let i = 0; i < N; i++) {
+    const x = (Math.random() - 0.5) * 0.6;
+    const y = c.b0 * x + c.b1 * x1 + c.b2 * x2 - c.a1 * y1 - c.a2 * y2;
+    ch[i] = y * 0.4;
+    x2 = x1; x1 = x;
+    y2 = y1; y1 = y;
+  }
+  // fade
+  const fade = Math.floor(0.05 * FS_AUDIO);
+  for (let i = 0; i < fade; i++) {
+    ch[i] *= i / fade;
+    ch[N - 1 - i] *= i / fade;
+  }
+  const src = ac.createBufferSource();
+  src.buffer = buf;
+  const gain = ac.createGain(); gain.gain.value = 0.6;
+  src.connect(gain); gain.connect(ac.destination);
+  src.start();
+  s8State.source = src;
+});
+$("s8Stop").addEventListener("click", s8StopAudio);
+
+//
+// =========================================================================
+//   § 9   z-plane stability
+// =========================================================================
+//
+const s9State = { px: 0.85, py: 0.4, dragging: false };
+
+function drawS9() {
+  const { ctx, w, h } = fit($("s9Canvas"));
+  ctx.clearRect(0, 0, w, h);
+
+  const split = w * 0.5;
+
+  // ---- left: z-plane ----
+  const cx = split * 0.5;
+  const cy = h * 0.5;
+  const r = Math.min(split, h) * 0.36;
+
+  // axes
+  ctx.strokeStyle = COLOR.line;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(cx - r * 1.5, cy); ctx.lineTo(cx + r * 1.5, cy);
+  ctx.moveTo(cx, cy - r * 1.5); ctx.lineTo(cx, cy + r * 1.5);
+  ctx.stroke();
+  // unit circle
+  ctx.strokeStyle = COLOR.inkStrong;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, TAU);
+  ctx.stroke();
+  // labels
+  ctx.fillStyle = COLOR.muted;
+  ctx.font = "10px Helvetica, Arial, sans-serif";
+  ctx.fillText("Re", cx + r * 1.5 - 16, cy + 14);
+  ctx.fillText("Im", cx + 6, cy - r * 1.5 + 12);
+  ctx.fillText("|z| = 1", cx + r + 6, cy - r);
+
+  // shaded stable region
+  ctx.fillStyle = "rgba(47,111,115,0.07)";
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, TAU); ctx.fill();
+
+  // pole position
+  const px = cx + s9State.px * r;
+  const py = cy - s9State.py * r;
+  // and conjugate
+  const pyc = cy + s9State.py * r;
+
+  // line from origin
+  ctx.strokeStyle = COLOR.accent;
+  ctx.setLineDash([3, 3]);
+  ctx.beginPath();
+  ctx.moveTo(cx, cy); ctx.lineTo(px, py);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // pole dot (draggable)
+  ctx.fillStyle = COLOR.accent;
+  ctx.beginPath();
+  ctx.arc(px, py, 8, 0, TAU); ctx.fill();
+  ctx.strokeStyle = COLOR.inkStrong;
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  // conjugate
+  ctx.fillStyle = "rgba(198,77,46,0.4)";
+  ctx.beginPath();
+  ctx.arc(cx + s9State.px * r, pyc, 6, 0, TAU); ctx.fill();
+
+  ctx.fillStyle = COLOR.ink;
+  ctx.font = "11px Helvetica, Arial, sans-serif";
+  ctx.fillText("drag the pole", cx - 30, h - 18);
+
+  // ---- right: impulse response ----
+  // Build a 2nd-order IIR with conjugate poles at (px, ±py).
+  // Denominator: (z - p)(z - p*) = z^2 - 2 Re(p) z + |p|^2
+  // So a1 = -2*Re(p), a2 = |p|^2.
+  const a1 = -2 * s9State.px;
+  const a2 = s9State.px * s9State.px + s9State.py * s9State.py;
+  // numerator: just unity for now (an all-pole filter)
+  const n = 200;
+  const ir = new Array(n).fill(0);
+  let y1 = 0, y2 = 0;
+  for (let i = 0; i < n; i++) {
+    const x = i === 0 ? 1 : 0;
+    const y = x - a1 * y1 - a2 * y2;
+    ir[i] = y;
+    y2 = y1; y1 = y;
+  }
+
+  // plot
+  const padL = split + 30, padR = 14, padT = 28, padB = 28;
+  const plotW = w - padL - padR;
+  const plotH = h - padT - padB;
+  ctx.strokeStyle = COLOR.lineDark;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(padL, padT); ctx.lineTo(padL, h - padB); ctx.lineTo(w - padR, h - padB);
+  ctx.stroke();
+  const yMid = padT + plotH / 2;
+  ctx.strokeStyle = "rgba(145,136,121,0.5)";
+  ctx.beginPath();
+  ctx.moveTo(padL, yMid); ctx.lineTo(w - padR, yMid);
+  ctx.stroke();
+
+  ctx.fillStyle = COLOR.muted;
+  ctx.font = "11px Helvetica, Arial, sans-serif";
+  ctx.fillText("impulse response over 200 samples", padL + 4, padT - 6);
+
+  // Clamp display to ±5 so explosions don't disappear off-axis (we still SHOW that they're huge).
+  const dispMax = 5;
+  const irMaxAbs = Math.max(...ir.map(v => Math.abs(v)));
+  let dispScale = irMaxAbs > dispMax ? plotH * 0.42 / dispMax : plotH * 0.42 / Math.max(0.1, irMaxAbs);
+
+  ctx.strokeStyle = COLOR.accent2;
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) {
+    const x = padL + (i / (n - 1)) * plotW;
+    const yClipped = Math.max(-dispMax, Math.min(dispMax, ir[i]));
+    const y = yMid - yClipped * dispScale;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // If exploded, draw a "CLIPPED" marker.
+  if (irMaxAbs > dispMax) {
+    ctx.fillStyle = COLOR.accent;
+    ctx.font = "bold 12px Helvetica, Arial, sans-serif";
+    ctx.fillText(`CLIPPED — IR peak = ${irMaxAbs.toFixed(1)}`, padL + 8, padT + 18);
+  }
+
+  // readouts
+  const mag = Math.sqrt(s9State.px * s9State.px + s9State.py * s9State.py);
+  $("s9Mag").textContent = mag.toFixed(3);
+  if (mag < 0.999) $("s9Stab").textContent = "stable";
+  else if (mag < 1.001) $("s9Stab").textContent = "marginal";
+  else $("s9Stab").textContent = "UNSTABLE";
+  // resonance frequency from pole angle
+  const ang = Math.atan2(s9State.py, s9State.px);
+  $("s9Freq").textContent = `${(ang / TAU * FS_AUDIO).toFixed(0)} Hz`;
+}
+
+function s9EventToPos(e) {
+  const rect = $("s9Canvas").getBoundingClientRect();
+  const x = e.clientX - rect.left, y = e.clientY - rect.top;
+  const split = rect.width * 0.5;
+  const cx = split * 0.5, cy = rect.height * 0.5;
+  const r = Math.min(split, rect.height) * 0.36;
+  return { px: (x - cx) / r, py: (cy - y) / r, withinPlane: x < split };
+}
+
+$("s9Canvas").addEventListener("pointerdown", (e) => {
+  const p = s9EventToPos(e);
+  if (!p.withinPlane) return;
+  // Force py >= 0 (display upper-half pole; conjugate handled automatically)
+  if (p.py < 0) p.py = -p.py;
+  s9State.dragging = true;
+  s9State.px = p.px;
+  s9State.py = p.py;
+  drawS9();
+});
+$("s9Canvas").addEventListener("pointermove", (e) => {
+  if (!s9State.dragging) return;
+  const p = s9EventToPos(e);
+  if (p.py < 0) p.py = -p.py;
+  s9State.px = p.px;
+  s9State.py = p.py;
+  drawS9();
+});
+window.addEventListener("pointerup", () => { s9State.dragging = false; });
+
+//
+// =========================================================================
+//   § 10   2D image filters
+// =========================================================================
+//
+const s10State = { kernel: 'identity' };
+
+const s10Kernels = {
+  identity: { K: [[0,0,0],[0,1,0],[0,0,0]], label: "identity (no change)" },
+  boxblur:  { K: [[1,1,1,1,1],[1,1,1,1,1],[1,1,1,1,1],[1,1,1,1,1],[1,1,1,1,1]].map(r => r.map(v => v/25)), label: "box blur (5×5, all 1/25)" },
+  gauss:    { K: (() => {
+              const K5 = [[1,4,7,4,1],[4,16,26,16,4],[7,26,41,26,7],[4,16,26,16,4],[1,4,7,4,1]];
+              const sum = 273;
+              return K5.map(r => r.map(v => v/sum));
+            })(), label: "Gaussian (5×5, σ≈1)" },
+  sharpen:  { K: [[0,-1,0],[-1,5,-1],[0,-1,0]], label: "sharpen (3×3, +5 centre)" },
+  sobelx:   { K: [[-1,0,1],[-2,0,2],[-1,0,1]], label: "Sobel-X (vertical edges)" },
+  laplace:  { K: [[0,-1,0],[-1,4,-1],[0,-1,0]], label: "Laplacian (all edges)" },
+};
+
+function makeTestImage(W, H) {
+  const img = new Float32Array(W * H);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      // gradient + ring + diagonal stripes + speckle
+      let v = 0.5 + 0.3 * (x / W);
+      const dx = x - W * 0.55, dy = y - H * 0.55;
+      const r = Math.sqrt(dx * dx + dy * dy);
+      v += 0.25 * Math.exp(-Math.pow((r - W * 0.18) / 4, 2));
+      v += 0.15 * Math.sin((x + y) * 0.18);
+      // a hard edge
+      if (Math.abs(dx + dy) < 1.5 && Math.abs(dx) < W * 0.25) v += 0.3;
+      // box pattern in corner
+      if (x < W * 0.25 && y < H * 0.25) {
+        v = ((x >> 2) + (y >> 2)) % 2 ? 0.85 : 0.15;
+      }
+      // speckle
+      v += (Math.random() - 0.5) * 0.04;
+      img[y * W + x] = v;
+    }
+  }
+  return img;
+}
+
+let s10Img;
+function drawS10() {
+  const cIn = $("s10In"), cOut = $("s10Out");
+  // Use logical pixels for fit but render at higher res. Use 200x200 internal.
+  const W = 200, H = 200;
+  if (!s10Img) s10Img = makeTestImage(W, H);
+
+  // Render input.
+  for (const c of [cIn, cOut]) {
+    c.width = W; c.height = H;
+    c.style.imageRendering = 'pixelated';
+  }
+
+  const ctxIn = cIn.getContext('2d');
+  const idIn = ctxIn.createImageData(W, H);
+  for (let i = 0; i < W * H; i++) {
+    const v = Math.max(0, Math.min(1, s10Img[i]));
+    const g = Math.round(v * 255);
+    idIn.data[4*i] = g; idIn.data[4*i+1] = g; idIn.data[4*i+2] = g; idIn.data[4*i+3] = 255;
+  }
+  ctxIn.putImageData(idIn, 0, 0);
+
+  // Apply 2D conv.
+  const K = s10Kernels[s10State.kernel].K;
+  const kH = K.length, kW = K[0].length;
+  const off = Math.floor(kH / 2);
+  const out = new Float32Array(W * H);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      let acc = 0;
+      for (let dy = 0; dy < kH; dy++) {
+        for (let dx = 0; dx < kW; dx++) {
+          let yy = y + dy - off, xx = x + dx - off;
+          if (yy < 0) yy = 0; if (yy >= H) yy = H - 1;
+          if (xx < 0) xx = 0; if (xx >= W) xx = W - 1;
+          acc += K[dy][dx] * s10Img[yy * W + xx];
+        }
+      }
+      out[y * W + x] = acc;
+    }
+  }
+  // Edge filters can produce negatives — center around 0.5 for display.
+  const isEdge = ['sobelx', 'laplace'].includes(s10State.kernel);
+  const ctxOut = cOut.getContext('2d');
+  const idOut = ctxOut.createImageData(W, H);
+  for (let i = 0; i < W * H; i++) {
+    let v = out[i];
+    if (isEdge) v = 0.5 + v;
+    v = Math.max(0, Math.min(1, v));
+    const g = Math.round(v * 255);
+    idOut.data[4*i] = g; idOut.data[4*i+1] = g; idOut.data[4*i+2] = g; idOut.data[4*i+3] = 255;
+  }
+  ctxOut.putImageData(idOut, 0, 0);
+
+  // Print kernel matrix.
+  const lines = [];
+  lines.push(`kernel: ${s10Kernels[s10State.kernel].label}`);
+  for (const row of K) {
+    lines.push("  [ " + row.map(v => v.toFixed(3).padStart(7)).join("  ") + " ]");
+  }
+  $("s10Mat").textContent = lines.join("\n");
+}
+
+document.querySelectorAll("#s10Kernel button").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("#s10Kernel button").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    s10State.kernel = btn.dataset.k;
+    drawS10();
+  });
+});
+
+//
+// =========================================================================
+//   § 11   choosing diagram
+// =========================================================================
+//
+function drawS11() {
+  const svg = document.querySelector("section#s11 svg.figure-svg");
+  if (!svg) return;
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+  const NS = "http://www.w3.org/2000/svg";
+
+  const boxes = [
+    { x:  20, y:  30, label: "running average",      sub: "5 lines",    note: "unweighted FIR · §1" },
+    { x: 220, y:  30, label: "windowed sinc",        sub: "Hann taper", note: "linear-phase FIR · §5" },
+    { x: 420, y:  30, label: "1-pole IIR",           sub: "2 multiplies", note: "cheap low-pass · §7" },
+    { x: 540, y: 200, label: "biquad band-pass",     sub: "5 coeffs",   note: "Q-controlled · §8" },
+    { x: 320, y: 200, label: "2D Gaussian blur",     sub: "5×5 kernel", note: "image FIR · §10" },
+    { x: 120, y: 200, label: "Sobel edge",           sub: "3×3 kernel", note: "image high-pass · §10" },
+  ];
+  for (const b of boxes) {
+    const g = document.createElementNS(NS, "g");
+    const rect = document.createElementNS(NS, "rect");
+    rect.setAttribute("x", b.x); rect.setAttribute("y", b.y);
+    rect.setAttribute("width", 160); rect.setAttribute("height", 80);
+    rect.setAttribute("fill", "#fffdf8"); rect.setAttribute("stroke", COLOR.lineDark);
+    rect.setAttribute("stroke-width", "1.5");
+    g.appendChild(rect);
+    const t1 = document.createElementNS(NS, "text");
+    t1.setAttribute("x", b.x + 10); t1.setAttribute("y", b.y + 22);
+    t1.setAttribute("font-family", "Helvetica Neue, Arial, sans-serif");
+    t1.setAttribute("font-size", "13"); t1.setAttribute("font-weight", "700");
+    t1.setAttribute("fill", COLOR.inkStrong);
+    t1.textContent = b.label;
+    g.appendChild(t1);
+    const t2 = document.createElementNS(NS, "text");
+    t2.setAttribute("x", b.x + 10); t2.setAttribute("y", b.y + 42);
+    t2.setAttribute("font-family", "SFMono-Regular, monospace");
+    t2.setAttribute("font-size", "11"); t2.setAttribute("fill", COLOR.accent);
+    t2.textContent = b.sub;
+    g.appendChild(t2);
+    const t3 = document.createElementNS(NS, "text");
+    t3.setAttribute("x", b.x + 10); t3.setAttribute("y", b.y + 64);
+    t3.setAttribute("font-family", "Helvetica Neue, Arial, sans-serif");
+    t3.setAttribute("font-size", "11"); t3.setAttribute("fill", COLOR.muted);
+    t3.textContent = b.note;
+    g.appendChild(t3);
+    svg.appendChild(g);
+  }
+
+  // Central "they all do the same thing" label
+  const cap = document.createElementNS(NS, "text");
+  cap.setAttribute("x", 360); cap.setAttribute("y", 165);
+  cap.setAttribute("text-anchor", "middle");
+  cap.setAttribute("font-family", "Georgia, serif");
+  cap.setAttribute("font-style", "italic");
+  cap.setAttribute("font-size", "14");
+  cap.setAttribute("fill", COLOR.ink);
+  cap.textContent = "all six = multiply past samples by weights, add";
+  svg.appendChild(cap);
+}
+
+//
+// =========================================================================
+//   bootstrap
+// =========================================================================
+//
+function drawAll() {
+  drawS1();
+  drawS2();
+  drawS3();
+  drawS4();
+  drawS5();
+  drawS6();
+  drawS7();
+  drawS8();
+  drawS9();
+  drawS10();
+  drawS11();
+}
+
+window.addEventListener("resize", drawAll);
+drawAll();
+s2Tick();
+</script>
+</body>
+</html>

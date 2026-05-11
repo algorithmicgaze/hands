@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>breath synth</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: #0a0a12;
+    color: #cfd8e3;
+    font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+    overflow: hidden;
+    user-select: none;
+  }
+  #viz {
+    position: fixed; inset: 0;
+    width: 100%; height: 100%;
+    display: block;
+  }
+  #hud {
+    position: fixed; left: 18px; top: 18px;
+    font-size: 11px;
+    line-height: 1.7;
+    color: #6e7c8c;
+    pointer-events: none;
+  }
+  #hud .label { display: inline-block; width: 110px; color: #4a5564; }
+  #hud .val { color: #cfd8e3; }
+  #status {
+    position: fixed; right: 18px; top: 18px;
+    font-size: 11px;
+    color: #6e7c8c;
+    text-align: right;
+  }
+  #status .dot {
+    display: inline-block; width: 8px; height: 8px;
+    border-radius: 50%; background: #555;
+    margin-right: 6px; vertical-align: middle;
+    transition: background 0.3s;
+  }
+  #status.connected .dot { background: #4caf50; box-shadow: 0 0 8px #4caf50; }
+  #status.connecting .dot { background: #ffc107; }
+  #status.error .dot { background: #ef5350; }
+  #waiting {
+    position: fixed; left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 12px; color: #4a5564;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    opacity: 0;
+    transition: opacity 0.6s;
+    pointer-events: none;
+  }
+  #waiting.show { opacity: 1; }
+  #startBtn {
+    position: fixed; left: 50%; bottom: 32px;
+    transform: translateX(-50%);
+    padding: 11px 22px;
+    background: rgba(26, 26, 38, 0.9);
+    color: #cfd8e3;
+    border: 1px solid #303040;
+    border-radius: 999px;
+    font: inherit; font-size: 12px;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+    backdrop-filter: blur(8px);
+    transition: all 0.2s;
+  }
+  #startBtn:hover { background: rgba(46, 46, 70, 0.9); border-color: #50506a; }
+  #startBtn.hidden { opacity: 0; pointer-events: none; transform: translateX(-50%) translateY(20px); }
+</style>
+</head>
+<body>
+<canvas id="viz"></canvas>
+<div id="hud">
+  <div><span class="label">breath</span><span class="val" id="v-breath">—</span></div>
+  <div><span class="label">local_vel</span><span class="val" id="v-vel">—</span></div>
+</div>
+<div id="status" class="connecting"><span class="dot"></span><span id="status-text">connecting…</span></div>
+<div id="waiting">waiting for breath data…</div>
+<button id="startBtn">▶ start audio</button>
+
+<script src="https://unpkg.com/mqtt@5.3.4/dist/mqtt.min.js"></script>
+<script>
+// ──────── State ────────
+// The Arduino publishes one already-prepared control signal.
+let latestBreath = 0;
+let breath = 0;
+let prevBreath = 0;
+let localVelocity = 0;
+
+// smooth_fast_breath usually lives in [-1, +1], with occasional wider motion.
+const PHASE_NORM = 1.0;
+const CLIENT_LERP = 0.07;
+const PHASE_DEADBAND = 0.035;
+const VELOCITY_DEADBAND = 0.006;
+const DIRECTION_DEADBAND = 0.01;
+const MQTT_TOPIC = 'hands/mmwave/smooth_fast_breath';
+
+// Time of most recent message — used to detect "no data flowing" state.
+let lastMsgAt = 0;
+
+// ──────── MQTT ────────
+const statusEl = document.getElementById('status');
+const statusText = document.getElementById('status-text');
+function setStatus(state, text) {
+  statusEl.className = state;
+  statusText.textContent = text;
+}
+
+const client = mqtt.connect('wss://algorithmicgaze.cloud.shiftr.io', {
+  username: 'algorithmicgaze',
+  password: 'CkQOb7udHZLgLLoQ',
+  // Random clientId — must not collide with the ESP32's `breath_demo`.
+  clientId: 'web-' + Math.random().toString(16).slice(2, 10),
+  reconnectPeriod: 2000,
+});
+
+client.on('connect', () => {
+  setStatus('connected', 'shiftr · connected');
+  client.subscribe(MQTT_TOPIC);
+});
+client.on('reconnect', () => setStatus('connecting', 'reconnecting…'));
+client.on('error',     (e) => setStatus('error', 'error: ' + (e.message || e)));
+client.on('close',     () => setStatus('connecting', 'disconnected'));
+
+client.on('message', (topic, payload) => {
+  if (topic !== MQTT_TOPIC) return;
+  const value = parseFloat(payload.toString());
+  if (!Number.isFinite(value)) return;
+  lastMsgAt = performance.now();
+  latestBreath = value;
+});
+
+// ──────── Audio ────────
+let audio = null; // populated on first Start click
+
+function startAudio() {
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+
+  // Three sines stacked: root, perfect fifth, octave below.
+  // Pure-sine but harmonically richer than a single oscillator.
+  const osc1 = ctx.createOscillator(); osc1.type = 'sine'; osc1.frequency.value = 220; // A3
+  const osc2 = ctx.createOscillator(); osc2.type = 'sine'; osc2.frequency.value = 330; // E4
+  const osc3 = ctx.createOscillator(); osc3.type = 'sine'; osc3.frequency.value = 110; // A2
+
+  const g1 = ctx.createGain(); g1.gain.value = 0.40;
+  const g2 = ctx.createGain(); g2.gain.value = 0.22;
+  const g3 = ctx.createGain(); g3.gain.value = 0.30;
+
+  // Lowpass filter — cutoff sweeps with breath velocity.
+  // Closed = mellow/calm, open = bright/active.
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.value = 500;
+  filter.Q.value = 0.8;
+
+  // Master gain modulated by breath activity. Starts at 0; ramps up after click.
+  const masterGain = ctx.createGain();
+  masterGain.gain.value = 0;
+
+  // Cheap feedback delay for a sense of space — turns sustained tone into pad.
+  const delay = ctx.createDelay(1.5);
+  delay.delayTime.value = 0.32;
+  const feedback = ctx.createGain(); feedback.gain.value = 0.42;
+  const wet      = ctx.createGain(); wet.gain.value      = 0.35;
+
+  //  oscN -> gN ┐
+  //              ├-> filter -> masterGain -> destination
+  //              ┘                       \-> delay (with feedback) -> wet -> destination
+  osc1.connect(g1); g1.connect(filter);
+  osc2.connect(g2); g2.connect(filter);
+  osc3.connect(g3); g3.connect(filter);
+  filter.connect(masterGain);
+  masterGain.connect(ctx.destination);
+  masterGain.connect(delay);
+  delay.connect(feedback);
+  feedback.connect(delay);
+  delay.connect(wet);
+  wet.connect(ctx.destination);
+
+  osc1.start(); osc2.start(); osc3.start();
+
+  audio = { ctx, osc1, osc2, osc3, filter, masterGain };
+}
+
+const startBtn = document.getElementById('startBtn');
+startBtn.addEventListener('click', () => {
+  if (!audio) startAudio();
+  startBtn.classList.add('hidden');
+});
+
+// ──────── Viz ────────
+const canvas = document.getElementById('viz');
+const ctx2d = canvas.getContext('2d');
+const waveform = []; // ring of recent normalized phase samples
+const HISTORY = 360;
+
+function resize() {
+  canvas.width  = window.innerWidth  * devicePixelRatio;
+  canvas.height = window.innerHeight * devicePixelRatio;
+  canvas.style.width  = window.innerWidth  + 'px';
+  canvas.style.height = window.innerHeight + 'px';
+}
+window.addEventListener('resize', resize);
+resize();
+
+const lerp = (a, b, t) => a + (b - a) * t;
+
+function frame() {
+  breath = lerp(breath, latestBreath, CLIENT_LERP);
+  localVelocity = lerp(localVelocity, breath - prevBreath, 0.2);
+  prevBreath = breath;
+
+  let normPhase = Math.max(-2, Math.min(2, breath / PHASE_NORM));
+  if (Math.abs(normPhase) < PHASE_DEADBAND) normPhase = 0;
+  const vel = Math.abs(localVelocity) < VELOCITY_DEADBAND
+    ? 0
+    : localVelocity;
+  const velMag = Math.abs(vel);
+
+  // ── Audio updates ──
+  if (audio) {
+    const t = audio.ctx.currentTime;
+    // Pitch wobble follows breath. Wider than before so the main breathing
+    // cycle is more audible, while the input smoothing keeps tiny bumps calm.
+    audio.osc1.detune.linearRampToValueAtTime(normPhase * 180, t + 0.08);
+    audio.osc2.detune.linearRampToValueAtTime(normPhase * 180, t + 0.08);
+    audio.osc3.detune.linearRampToValueAtTime(normPhase *  80, t + 0.08);
+    // Filter cutoff follows locally derived velocity.
+    const cutoff = Math.min(6500, 450 + velMag * 90000);
+    audio.filter.frequency.linearRampToValueAtTime(cutoff, t + 0.08);
+    // Master gain: tanh-shaped swell so it saturates softly rather than
+    // slamming a hard ceiling. Floor of 0.05 keeps an ambient hum audible.
+    const targetGain = 0.05 + Math.tanh(velMag * 34) * 0.42;
+    audio.masterGain.gain.linearRampToValueAtTime(targetGain, t + 0.14);
+  }
+
+  // ── Waveform history ──
+  waveform.push(normPhase);
+  if (waveform.length > HISTORY) waveform.shift();
+
+  const w = canvas.width, h = canvas.height;
+  const cx = w / 2, cy = h / 2;
+
+  // Trail effect: don't fully clear, just fade. Cheap motion blur.
+  ctx2d.fillStyle = 'rgba(10, 10, 18, 0.18)';
+  ctx2d.fillRect(0, 0, w, h);
+
+  // Color: blue when inhaling, amber when exhaling, neutral when still.
+  const dir = vel;
+  const hue = dir > DIRECTION_DEADBAND ? 200 : (dir < -DIRECTION_DEADBAND ? 30 : 220);
+  const sat = 70;
+
+  // Waveform trace: drawn from the LEFT edge to the screen's horizontal
+  // center, so its rightmost sample lines up with the circle. History
+  // trails into the past on the left; "now" is at the center.
+  const amp = h * 0.18;
+  ctx2d.strokeStyle = `hsla(${hue}, ${sat}%, 65%, 0.45)`;
+  ctx2d.lineWidth = 1.5 * devicePixelRatio;
+  ctx2d.beginPath();
+  for (let i = 0; i < waveform.length; i++) {
+    const x = (i / HISTORY) * cx;
+    const y = cy - waveform[i] * amp;
+    if (i === 0) ctx2d.moveTo(x, y); else ctx2d.lineTo(x, y);
+  }
+  ctx2d.stroke();
+
+  // Breathing circle rides the waveform: vertical position uses the SAME
+  // `amp` and live `normPhase`, so the circle sits exactly where the
+  // waveform line ends. Radius pulses with phase, halo intensity with velocity.
+  const circleY = cy - normPhase * amp;
+  const baseR   = Math.min(w, h) * 0.13;
+  const r       = Math.max(baseR * 0.2, baseR + normPhase * baseR * 0.45);
+  const alpha   = 0.25 + Math.min(0.55, velMag * 30);
+
+  // Soft halo via radial gradient — re-centered on the moving circle.
+  const grad = ctx2d.createRadialGradient(cx, circleY, r * 0.2, cx, circleY, r * 2.4);
+  grad.addColorStop(0, `hsla(${hue}, ${sat}%, 65%, ${alpha})`);
+  grad.addColorStop(1, `hsla(${hue}, ${sat}%, 50%, 0)`);
+  ctx2d.fillStyle = grad;
+  ctx2d.fillRect(0, 0, w, h);
+
+  // Crisp ring at the live position.
+  ctx2d.strokeStyle = `hsla(${hue}, 80%, 72%, 0.85)`;
+  ctx2d.lineWidth = 2.5 * devicePixelRatio;
+  ctx2d.beginPath();
+  ctx2d.arc(cx, circleY, r, 0, Math.PI * 2);
+  ctx2d.stroke();
+
+  // ── HUD numbers ──
+  document.getElementById('v-breath').textContent = latestBreath.toFixed(3);
+  document.getElementById('v-vel').textContent    = localVelocity.toFixed(4);
+
+  // "Waiting" hint when no message in 2s.
+  const stale = lastMsgAt === 0 || (performance.now() - lastMsgAt) > 2000;
+  document.getElementById('waiting').classList.toggle('show', stale);
+
+  requestAnimationFrame(frame);
+}
+frame();
+</script>
+</body>
+</html>

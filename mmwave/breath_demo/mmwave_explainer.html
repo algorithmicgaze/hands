@@ -1,0 +1,2622 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>How a 60 GHz radar measures your breathing — and why its filter lags by five seconds</title>
+<!--
+  Dependency map (topological order, one section per concept):
+    1.  The scale of the problem                 (depends on: nothing)
+    2.  The 60 GHz lever                         (depends on: 1)
+    3.  Why a single tone is not enough          (depends on: 2)
+    4.  Chirp, mix, beat — the FMCW idea         (depends on: 3)
+    5.  Range bins from one FFT                  (depends on: 4)
+    6.  Phase: the secret superpower             (depends on: 5)
+    7.  Wrap and unwrap                          (depends on: 6)
+    8.  Doppler: motion versus clutter           (depends on: 5, 6)
+    9.  The breath waveform you can play with    (depends on: 7)
+   10.  Filtering — and the cost of selectivity  (depends on: 9)
+   11.  Inside the MR60BHA2 firmware             (depends on: 4-10)
+   12.  Where the five seconds came from         (depends on: 10, 11)
+   13.  The escape hatch                         (depends on: 12)
+
+  Model contract:
+    Claim:        Phase, not amplitude, is what makes mmWave radar see sub-millimetre
+                  chest motion. The firmware's "breath_phase" lag is a property of
+                  its IIR filter, not a sensor limitation.
+    Mechanism:    Chirp -> range FFT -> complex bin -> atan2 -> unwrap -> IIR band-pass.
+                  Narrow band-pass = long settling time = visible latency.
+    Reader action: Drag chest position, frequency, motion amplitude, filter Q.
+                   Watch phase wrap; watch settling lengthen.
+    Visible consequence: Phase wraps when chest motion crosses lambda/2 = 2.5 mm.
+                         Output trails the input by visible seconds at high Q.
+    Evidence:     First-principles FMCW radar math (Jankiraman, Patole, Goldsmith).
+                  Reverse-engineering of MR60BHA2 firmware v1.6.12 in this project.
+    Limit:        The IIR coefficients live past the end of the OTA blob and were
+                  not directly read. Chest-motion magnitudes are typical values
+                  from clinical mmWave-vital-signs literature, not measured on this device.
+-->
+<style>
+  :root {
+    --paper: #f7f7f7;
+    --ink: #444;
+    --ink-strong: #2b2b2b;
+    --muted: #76716a;
+    --line: #c9c1b4;
+    --line-dark: #918879;
+    --accent: #c64d2e;
+    --accent-soft: rgba(198, 77, 46, 0.18);
+    --accent-2: #2f6f73;
+    --accent-2-soft: rgba(47, 111, 115, 0.18);
+    --accent-3: #6b5b95;
+    --panel: #fffdf8;
+    --panel-2: #f7f2e9;
+    --grid: rgba(68, 68, 68, 0.13);
+    --grid-soft: rgba(68, 68, 68, 0.07);
+  }
+
+  * { box-sizing: border-box; }
+
+  html {
+    color: var(--ink);
+    background: var(--paper);
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 18px;
+    line-height: 1.55;
+  }
+
+  body {
+    margin: 0;
+    background:
+      linear-gradient(var(--grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid) 1px, transparent 1px),
+      var(--paper);
+    background-size: 32px 32px;
+  }
+
+  main {
+    width: min(1180px, calc(100% - 32px));
+    margin: 0 auto;
+    padding: 34px 0 70px;
+  }
+
+  header {
+    border-top: 4px solid var(--ink-strong);
+    border-bottom: 1px solid var(--line-dark);
+    padding: 30px 0 26px;
+    margin-bottom: 18px;
+  }
+
+  h1, h2, h3, h4 {
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    letter-spacing: 0;
+    line-height: 1.1;
+    color: var(--ink-strong);
+    margin: 0;
+  }
+
+  h1 {
+    max-width: 1000px;
+    font-size: clamp(2.1rem, 5vw, 4.2rem);
+    font-weight: 800;
+    line-height: 1.04;
+  }
+
+  h2 {
+    font-size: clamp(1.45rem, 3vw, 2.05rem);
+    margin-bottom: 10px;
+  }
+
+  h3 {
+    font-size: 1rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 8px;
+  }
+
+  h4 {
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+    font-weight: 700;
+  }
+
+  p { margin: 0 0 1rem; max-width: 740px; }
+
+  em { color: var(--ink-strong); }
+
+  code {
+    font-family: "SFMono-Regular", Consolas, monospace;
+    font-size: 0.86em;
+    background: #ece7dd;
+    padding: 0.08em 0.32em;
+  }
+
+  .kicker {
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    font-size: 0.72rem;
+    color: var(--accent);
+    font-weight: 800;
+    margin-bottom: 14px;
+  }
+
+  .dek {
+    font-size: 1.18rem;
+    color: #5b554d;
+    margin-top: 18px;
+    max-width: 840px;
+  }
+
+  .byline {
+    margin-top: 20px;
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    font-size: 0.78rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+  }
+
+  .toc {
+    margin-top: 28px;
+    padding: 14px 18px;
+    border: 1px solid var(--line);
+    background: var(--panel);
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    font-size: 0.84rem;
+    color: var(--muted);
+  }
+
+  .toc-title {
+    color: var(--ink-strong);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-size: 0.74rem;
+    margin-bottom: 6px;
+  }
+
+  .toc ol {
+    margin: 0;
+    padding-left: 22px;
+    columns: 2;
+    column-gap: 28px;
+  }
+
+  .toc li { margin-bottom: 2px; }
+
+  .toc a { color: var(--ink); text-decoration: none; border-bottom: 1px dotted var(--line-dark); }
+  .toc a:hover { color: var(--accent); border-bottom-color: var(--accent); }
+
+  section {
+    display: grid;
+    grid-template-columns: minmax(0, 0.86fr) minmax(380px, 1.14fr);
+    gap: 38px;
+    align-items: start;
+    padding: 46px 0 38px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .copy {
+    position: sticky;
+    top: 20px;
+    min-width: 0;
+  }
+
+  .section-num {
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    font-size: 0.74rem;
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    font-weight: 800;
+    margin-bottom: 6px;
+  }
+
+  .figure {
+    background: var(--panel);
+    border: 1px solid var(--line-dark);
+    padding: 16px;
+    min-width: 0;
+  }
+
+  .figure + .figure { margin-top: 18px; }
+
+  .figure-title {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: baseline;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 8px;
+    margin-bottom: 12px;
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #5d574f;
+  }
+
+  .figure-title .hint { color: var(--accent); font-weight: 700; }
+
+  canvas, .canvas-host > svg {
+    display: block;
+    width: 100%;
+    background:
+      linear-gradient(var(--grid-soft) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid-soft) 1px, transparent 1px),
+      #fbfaf6;
+    background-size: 20px 20px;
+    border: 1px solid var(--line);
+  }
+
+  canvas { height: 280px; }
+  .wide-canvas { height: 340px; }
+  .tall-canvas { height: 420px; }
+  .small-canvas { height: 220px; }
+
+  .controls {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+    margin-top: 14px;
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    font-size: 0.85rem;
+  }
+
+  .controls.two { grid-template-columns: 1fr 1fr; gap: 14px 24px; }
+
+  label {
+    display: grid;
+    grid-template-columns: 130px 1fr 78px;
+    gap: 10px;
+    align-items: center;
+    min-height: 28px;
+  }
+
+  label > span:first-child { color: #5d574f; }
+
+  input[type="range"] {
+    width: 100%;
+    accent-color: var(--accent);
+  }
+
+  output {
+    font-family: "SFMono-Regular", Consolas, monospace;
+    font-size: 0.86rem;
+    color: var(--ink-strong);
+    text-align: right;
+  }
+
+  button, select {
+    appearance: none;
+    border: 1px solid var(--ink);
+    background: #eee7da;
+    color: var(--ink);
+    font: 700 0.82rem "Helvetica Neue", Arial, sans-serif;
+    padding: 8px 12px;
+    cursor: pointer;
+  }
+
+  button:hover { background: #e1d6c5; }
+  button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+  .button-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .readout {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-top: 12px;
+    font-family: "Helvetica Neue", Arial, sans-serif;
+  }
+
+  .readout.two { grid-template-columns: repeat(2, 1fr); }
+  .readout.four { grid-template-columns: repeat(4, 1fr); }
+
+  .readout div {
+    border: 1px solid var(--line);
+    background: var(--panel-2);
+    padding: 10px;
+    min-height: 70px;
+  }
+
+  .readout strong {
+    display: block;
+    font-size: 1.18rem;
+    line-height: 1.1;
+    color: var(--ink-strong);
+    font-family: "SFMono-Regular", Consolas, monospace;
+  }
+
+  .readout span {
+    display: block;
+    font-size: 0.7rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-top: 6px;
+  }
+
+  .note {
+    max-width: none;
+    margin: 12px 0 0;
+    padding-top: 10px;
+    border-top: 1px solid var(--line);
+    color: #5f5a52;
+    font-size: 0.95rem;
+  }
+
+  .equation {
+    display: block;
+    margin: 14px 0 10px;
+    padding: 14px 18px;
+    background: var(--panel-2);
+    border-left: 3px solid var(--accent);
+    font-family: "SFMono-Regular", Consolas, monospace;
+    font-size: 1rem;
+    color: var(--ink-strong);
+    line-height: 1.5;
+  }
+
+  .equation .where {
+    display: block;
+    margin-top: 8px;
+    font-family: Georgia, serif;
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+
+  .pipe {
+    display: grid;
+    gap: 8px;
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    font-size: 0.78rem;
+  }
+
+  .pipe div {
+    min-height: 64px;
+    border: 1px solid var(--line-dark);
+    background: var(--panel);
+    padding: 10px;
+    position: relative;
+  }
+
+  .pipe strong {
+    display: block;
+    color: var(--ink-strong);
+    margin-bottom: 4px;
+  }
+
+  pre.code {
+    margin: 0;
+    padding: 14px 16px;
+    border: 1px solid var(--line);
+    background: #fbfaf6;
+    color: #2b2b2b;
+    font-family: "SFMono-Regular", Consolas, monospace;
+    font-size: 0.78rem;
+    line-height: 1.55;
+    overflow-x: auto;
+    white-space: pre;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  pre.code .kw { color: #6b5b95; font-weight: 700; }
+  pre.code .ty { color: #2f6f73; }
+  pre.code .num { color: #c64d2e; }
+  pre.code .com { color: #918879; font-style: italic; }
+  pre.code .fn { color: #2b2b2b; font-weight: 700; }
+  pre.code .str { color: #6b5b95; }
+
+  .stage-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-bottom: 12px;
+  }
+
+  .stage-tabs button {
+    font-size: 0.74rem;
+    padding: 6px 10px;
+    flex: 1 1 0;
+    min-width: 96px;
+  }
+
+  .stage-tabs button.active {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
+
+  .stage-body {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 14px;
+    margin-top: 10px;
+  }
+
+  .stage-summary {
+    font-family: Georgia, serif;
+    font-size: 0.95rem;
+    color: var(--ink);
+    border: 1px solid var(--line);
+    background: var(--panel-2);
+    padding: 12px 14px;
+    min-height: 90px;
+  }
+
+  .legend {
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+    margin: 8px 0 0;
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    font-size: 0.78rem;
+    color: var(--muted);
+  }
+
+  .legend .swatch {
+    display: inline-block;
+    width: 16px;
+    height: 3px;
+    margin-right: 6px;
+    vertical-align: middle;
+  }
+  .legend .dot {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    margin-right: 6px;
+    vertical-align: middle;
+  }
+
+  .pull {
+    margin: 36px 0 18px;
+    padding: 22px 26px;
+    border-left: 4px solid var(--accent);
+    background: var(--panel);
+    font-size: 1.18rem;
+    line-height: 1.4;
+    color: var(--ink-strong);
+    max-width: 880px;
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    font-weight: 500;
+  }
+
+  footer {
+    padding-top: 34px;
+    color: #5f5a52;
+    font-size: 0.95rem;
+  }
+
+  footer h3 { margin-top: 22px; margin-bottom: 6px; }
+
+  footer ul {
+    padding-left: 18px;
+    margin: 0 0 12px;
+  }
+
+  footer li { margin-bottom: 4px; }
+
+  /* Reduced-motion accommodations: animations collapse to instant frames. */
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+
+  @media (max-width: 940px) {
+    section { grid-template-columns: 1fr; gap: 22px; padding-top: 36px; }
+    .copy { position: static; }
+    .controls.two { grid-template-columns: 1fr; }
+    .readout, .readout.four { grid-template-columns: 1fr 1fr; }
+    .toc ol { columns: 1; }
+    label { grid-template-columns: 110px 1fr 64px; }
+  }
+
+  @media (max-width: 480px) {
+    label { grid-template-columns: 1fr; gap: 4px; }
+    output { text-align: left; }
+    .readout, .readout.four { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="kicker">Explorable explanation · Seeed MR60BHA2 · firmware archaeology</div>
+    <h1>How a chip the size of a thumbnail measures your breathing through your shirt</h1>
+    <p class="dek">A 60 GHz mmWave radar can read chest motion at the millimetre scale because it does not measure how strong the echo is — it measures <em>where in the wave cycle</em> the echo arrives. Here is how that trick works from first principles, exactly how the MR60BHA2 firmware does it inside, and why its tidy <code>breath_phase</code> output lags by five seconds.</p>
+    <p class="byline">a companion to breath_demo · readable in about 35 minutes</p>
+    <nav class="toc" aria-label="Table of contents">
+      <div class="toc-title">Contents</div>
+      <ol>
+        <li><a href="#s1">The scale of the problem</a></li>
+        <li><a href="#s2">The 60 GHz lever</a></li>
+        <li><a href="#s3">A bare tone is ambiguous</a></li>
+        <li><a href="#s4">Chirp, mix, beat</a></li>
+        <li><a href="#s5">From beat to range bins</a></li>
+        <li><a href="#s6">Phase: the secret superpower</a></li>
+        <li><a href="#s7">Wrap and unwrap</a></li>
+        <li><a href="#s8">Doppler: motion vs. clutter</a></li>
+        <li><a href="#s9">A breath waveform you can play with</a></li>
+        <li><a href="#s10">Filtering — and what it costs</a></li>
+        <li><a href="#s11">Inside the MR60BHA2</a></li>
+        <li><a href="#s12">Where the five seconds came from</a></li>
+        <li><a href="#s13">The escape hatch</a></li>
+      </ol>
+    </nav>
+  </header>
+
+  <!-- ============================================================ -->
+  <section id="s1">
+    <div class="copy">
+      <div class="section-num">§ 1</div>
+      <h2>The scale of the problem</h2>
+      <p>Breathing pushes the chest forward and back by about <em>4 to 8 millimetres</em> over each three-to-five-second cycle. A heartbeat — the mechanical thump of the cardiac muscle against the chest wall — moves the surface by something between <em>0.1 and 0.5 millimetres</em>, riding on top of the slower breathing motion at roughly one beat per second.</p>
+      <p>So our sensor has one job: report a number that follows the front of a moving chest with sub-millimetre accuracy, through a shirt, from a metre away. Drag the sliders to vary the two motions and watch the combined chest position over ten seconds.</p>
+      <p class="note" style="border:none; padding:0;">The amplitudes here are typical of the clinical mmWave radar literature; your own body, posture, and shirt fabric will shift them. The frequencies are real ranges (breath: 0.1–0.5 Hz; heart: 0.8–2 Hz).</p>
+    </div>
+    <div class="figure">
+      <div class="figure-title"><span>Figure 1 · chest displacement</span><span class="hint">drag the sliders</span></div>
+      <canvas id="chestCanvas" class="wide-canvas" aria-label="Synthesized chest displacement vs time"></canvas>
+      <div class="legend">
+        <span><span class="swatch" style="background:var(--accent-2);"></span>breath component</span>
+        <span><span class="swatch" style="background:var(--accent-3);"></span>heart component</span>
+        <span><span class="swatch" style="background:var(--ink-strong);"></span>combined chest position</span>
+      </div>
+      <div class="controls two">
+        <label><span>Breath rate</span><input id="breathRateSlider" type="range" min="6" max="24" step="0.5" value="14"><output id="breathRateOut">14 BPM</output></label>
+        <label><span>Breath amp.</span><input id="breathAmpSlider" type="range" min="1" max="10" step="0.5" value="6"><output id="breathAmpOut">6.0 mm</output></label>
+        <label><span>Heart rate</span><input id="heartRateSlider" type="range" min="40" max="120" step="1" value="68"><output id="heartRateOut">68 BPM</output></label>
+        <label><span>Heart amp.</span><input id="heartAmpSlider" type="range" min="0" max="1" step="0.02" value="0.3"><output id="heartAmpOut">0.30 mm</output></label>
+      </div>
+      <p class="note">Notice that the heart trace, drawn at the same vertical scale, is so much smaller than the breath trace that it almost vanishes when both are summed. Anything that wants to recover the heartbeat has to dig out a 0.3 mm wobble buried inside a 6 mm motion. <em>That</em> is the dynamic range we are working against.</p>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="s2">
+    <div class="copy">
+      <div class="section-num">§ 2</div>
+      <h2>The 60 GHz lever</h2>
+      <p>The MR60BHA2 transmits at 60 gigahertz. The single most important consequence of that choice is the <em>wavelength</em>: about five millimetres in air, the same scale as the motion we want to measure.</p>
+      <p>We will need this fact several times, so it is worth stating cleanly. If a target moves toward the radar by some distance Δr, the round trip shortens by 2 Δr, and the phase of the returning wave advances by:</p>
+      <span class="equation">
+        Δφ = 4π · Δr / λ
+        <span class="where">where λ is the wavelength of the carrier and Δr is the change in target distance.</span>
+      </span>
+      <p>Pull the frequency slider. At 60 GHz, one millimetre of chest motion turns the phase by roughly 480 degrees — more than a full rotation. At 5 GHz it would be only 24 degrees, which is well below the noise floor of any practical radar. <em>Phase sensitivity scales with carrier frequency.</em> That is why mmWave is the band of choice for vital-signs sensing.</p>
+    </div>
+    <div class="figure">
+      <div class="figure-title"><span>Figure 2 · wavelength versus frequency</span><span class="hint">frequency slider</span></div>
+      <canvas id="lambdaCanvas" class="wide-canvas" aria-label="Wavelength visualization at varying carrier frequency"></canvas>
+      <div class="readout four">
+        <div><strong id="freqRead">60 GHz</strong><span>carrier</span></div>
+        <div><strong id="lambdaRead">5.00 mm</strong><span>wavelength λ</span></div>
+        <div><strong id="halfLambdaRead">2.50 mm</strong><span>λ / 2</span></div>
+        <div><strong id="degPerMmRead">480°</strong><span>phase per mm</span></div>
+      </div>
+      <div class="controls">
+        <label><span>Carrier f</span><input id="freqSlider" type="range" min="2" max="120" step="1" value="60"><output id="freqOut">60 GHz</output></label>
+      </div>
+      <p class="note">Notice the second column: <em>λ / 2</em>. That is the round-trip-equivalent of one full wavelength of phase, and it is the limit beyond which phase by itself becomes ambiguous. We will return to it in Section 7.</p>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="s3">
+    <div class="copy">
+      <div class="section-num">§ 3</div>
+      <h2>A bare tone is ambiguous</h2>
+      <p>Imagine we just transmit a constant 60 GHz tone and listen for the echo. The echo comes back, faintly, with some delay. We could try to read the delay — but there is no clock to read it against. Every period of the wave looks like every other period. After one cycle (about 17 picoseconds at 60 GHz, or 2.5 mm of round-trip travel) the wave repeats and we cannot tell one cycle from the next.</p>
+      <p>Watch the figure: the outgoing and returning waves are pure tones. Slide the target. The echo's amplitude shifts a little, its phase shifts more, but neither tells us how far away the target is — only that <em>something is there</em>, and it has moved slightly since the last instant we looked.</p>
+      <p>To recover absolute range, we need a transmitted signal whose <em>shape changes with time</em>. The fix is so elegant it is the basis for almost every modern automotive and short-range radar.</p>
+    </div>
+    <div class="figure">
+      <div class="figure-title"><span>Figure 3 · single tone, no time reference</span><span class="hint">slide the target</span></div>
+      <canvas id="cwCanvas" class="wide-canvas" aria-label="Continuous-wave transmit and echo"></canvas>
+      <div class="controls">
+        <label><span>Target range</span><input id="cwRangeSlider" type="range" min="0.2" max="3" step="0.02" value="1"><output id="cwRangeOut">1.00 m</output></label>
+      </div>
+      <p class="note">As you can see, no matter where you place the target, the returning wave is just a delayed copy of the same eternal tone. To turn delay into a number, we have to give time itself a fingerprint.</p>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="s4">
+    <div class="copy">
+      <div class="section-num">§ 4</div>
+      <h2>Chirp, mix, beat</h2>
+      <p>A <em>chirp</em> is a tone whose frequency rises smoothly during the pulse — think of a slide whistle going up. The MR60BHA2 sends bursts of these, sweeping by perhaps three or four gigahertz over a fraction of a millisecond. Now the wave is not eternal. <em>Right now</em> it is at one frequency; <em>one microsecond ago</em> it was at a different one.</p>
+      <p>When the echo returns, its frequency is whatever the chirp WAS some moments ago. The transmitter has already moved on. If we mix the two — multiply them and low-pass — we get a new tone, the <em>beat note</em>, whose frequency is exactly proportional to the round-trip delay, which is exactly proportional to the target's range.</p>
+      <span class="equation">
+        f<sub>b</sub> = (2 · BW · R) / (c · T<sub>chirp</sub>)
+        <span class="where">where BW is the chirp's frequency sweep, R is target range, c is the speed of light, T<sub>chirp</sub> is the chirp duration.</span>
+      </span>
+      <p>The figure shows the time–frequency plot. The orange ramp is what we transmit; the teal ramp, displaced to the right, is the echo from a target at the slider's range. The vertical gap between the two lines is the beat frequency f<sub>b</sub>. Slide the range and watch the gap grow.</p>
+    </div>
+    <div class="figure">
+      <div class="figure-title"><span>Figure 4 · time-frequency view of one chirp</span><span class="hint">range and bandwidth</span></div>
+      <canvas id="chirpCanvas" class="wide-canvas" aria-label="Time-frequency diagram of an FMCW chirp and its echo"></canvas>
+      <div class="legend">
+        <span><span class="swatch" style="background:var(--accent);"></span>transmitted chirp</span>
+        <span><span class="swatch" style="background:var(--accent-2);"></span>received echo</span>
+        <span><span class="swatch" style="background:var(--ink-strong);"></span>beat = vertical gap</span>
+      </div>
+      <div class="controls two">
+        <label><span>Target range</span><input id="chirpRangeSlider" type="range" min="0.2" max="6" step="0.05" value="2"><output id="chirpRangeOut">2.0 m</output></label>
+        <label><span>Sweep BW</span><input id="chirpBwSlider" type="range" min="0.5" max="4" step="0.1" value="3"><output id="chirpBwOut">3.0 GHz</output></label>
+      </div>
+      <div class="readout">
+        <div><strong id="beatFreqRead">— kHz</strong><span>beat frequency</span></div>
+        <div><strong id="rangeResRead">— cm</strong><span>range resolution</span></div>
+        <div><strong id="chirpTimeRead">100 µs</strong><span>chirp duration</span></div>
+      </div>
+      <p class="note">Notice the second readout: <em>range resolution</em>. It is c / (2 · BW), independent of carrier frequency. Wider sweep, finer separation between two close targets — but also a bigger demand on the analog-to-digital chain. The MR60BHA2 sweeps about 3 GHz, giving roughly five centimetres of range resolution. That is more than enough to put a chest into its own range bin.</p>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="s5">
+    <div class="copy">
+      <div class="section-num">§ 5</div>
+      <h2>From beat to range bins</h2>
+      <p>If there is one target the beat is a single tone. If there are several, the beat is a sum of tones — one per target — each with a frequency proportional to its range. We can pull them apart with a tool we already have: the Fourier transform.</p>
+      <p>Take an FFT of one chirp's worth of beat samples. Each output bin corresponds to a small slice of distance. The MR60BHA2 takes a 256-point FFT per chirp; the simulation below uses a 128-point FFT to keep the JavaScript fast, but the picture is identical. After the FFT, "the wall behind the person" lives in one bin, "the body" lives in another, "the chair" lives in a third. We call the result a <em>range profile</em>.</p>
+      <p>Drag the sliders to add or move targets. The top trace is the time-domain beat (a sum of sines); the bottom trace is its FFT magnitude — a histogram of energy by range. As you move a target, its peak slides along the range axis.</p>
+    </div>
+    <div class="figure">
+      <div class="figure-title"><span>Figure 5 · range FFT</span><span class="hint">three sliders, three targets</span></div>
+      <canvas id="rangeCanvas" class="tall-canvas" aria-label="Sum of sinusoids and its FFT, showing range bins as peaks"></canvas>
+      <div class="controls">
+        <label><span>Target A</span><input id="tgtASlider" type="range" min="2" max="60" step="0.5" value="14"><output id="tgtAOut">0.55 m</output></label>
+        <label><span>Target B</span><input id="tgtBSlider" type="range" min="2" max="60" step="0.5" value="36"><output id="tgtBOut">1.41 m</output></label>
+        <label><span>Target C</span><input id="tgtCSlider" type="range" min="2" max="60" step="0.5" value="51"><output id="tgtCOut">1.99 m</output></label>
+      </div>
+      <p class="note">As you can see, the FFT's peaks are the targets. The orange dotted line marks the chest range we will be tracking — bin 14 of 64 in the simulation, about 55 centimetres in this synthetic scene. From here on, we will follow that one bin only.</p>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="s6">
+    <div class="copy">
+      <div class="section-num">§ 6</div>
+      <h2>Phase: the secret superpower</h2>
+      <p>Here is the move that makes mmWave vital-signs sensing possible. An FFT bin is not a real number — it is a <em>complex</em> number, a point on the plane. Its magnitude tells us how strong the echo is at that range; its <em>angle</em> is something else entirely.</p>
+      <p>That angle is a continuous reading of motion <em>within</em> the range cell, finer than the cell itself. The cell is five centimetres wide. The angle resolves down to fractions of a millimetre. As the target moves toward the radar by Δr, the angle rotates by 4π · Δr / λ — the same equation we met in Section 2, now living inside an FFT bin.</p>
+      <p>Drag the chest position. The dot in the complex plane rotates around the origin. Notice how a tiny motion — far smaller than the range cell — sweeps the dot through a large angle. <em>The cell is for finding the target; the angle is for measuring its motion.</em></p>
+    </div>
+    <div class="figure">
+      <div class="figure-title"><span>Figure 6 · the complex bin</span><span class="hint">sub-millimetre slider</span></div>
+      <canvas id="complexCanvas" class="tall-canvas" aria-label="Complex plane showing FFT bin rotating with chest position"></canvas>
+      <div class="controls">
+        <label><span>Chest motion</span><input id="microSlider" type="range" min="-3" max="3" step="0.005" value="0"><output id="microOut">+0.000 mm</output></label>
+      </div>
+      <div class="readout">
+        <div><strong id="phiRadRead">0.000 rad</strong><span>phase angle φ</span></div>
+        <div><strong id="phiDegRead">0.0°</strong><span>same in degrees</span></div>
+        <div><strong id="phiTurnsRead">0.000</strong><span>full turns</span></div>
+      </div>
+      <p class="note">Move slowly: at the limit of the slider's resolution (0.005 mm) you are turning the dot by about 2.4 degrees. That is the regime in which a heartbeat lives. Whatever else the firmware does, it has to extract that angle cleanly, frame after frame.</p>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="s7">
+    <div class="copy">
+      <div class="section-num">§ 7</div>
+      <h2>Wrap and unwrap</h2>
+      <p>Phase has a problem. The function that recovers the angle of a complex number — <code>atan2</code> — only knows the answer modulo 2π. It returns a value in [−π, +π]. Move the chest by more than λ/2 (about 2.5 mm at 60 GHz) between two consecutive frames, and the phase appears to jump backwards by a whole turn.</p>
+      <p>The fix is <em>phase unwrapping</em>. We track jumps from one frame to the next: any difference larger than +π is corrected by subtracting 2π; any smaller than −π gets 2π added. We accumulate those corrections so the running total stays continuous. As the name implies, it unwraps the phase from the circle onto a line.</p>
+      <p>Drag the motion amplitude. Below 2.5 mm, the wrapped trace (top) and unwrapped trace (bottom) are identical. Push past it, and the wrapped trace breaks into discontinuities while the unwrapped trace stays smooth — provided the motion does not exceed λ/2 between consecutive samples. That last caveat is why frame rate matters.</p>
+    </div>
+    <div class="figure">
+      <div class="figure-title"><span>Figure 7 · wrap vs. unwrap</span><span class="hint">amplitude slider</span></div>
+      <canvas id="unwrapCanvas" class="tall-canvas" aria-label="Wrapped and unwrapped phase versus time"></canvas>
+      <div class="legend">
+        <span><span class="swatch" style="background:var(--accent);"></span>raw atan2 (wrapped)</span>
+        <span><span class="swatch" style="background:var(--accent-2);"></span>unwrapped</span>
+        <span><span class="swatch" style="background:#aaa;"></span>true chest motion</span>
+      </div>
+      <div class="controls two">
+        <label><span>Motion amp.</span><input id="unwrapAmpSlider" type="range" min="0.5" max="12" step="0.1" value="3.5"><output id="unwrapAmpOut">3.5 mm</output></label>
+        <label><span>Frame rate</span><input id="unwrapFsSlider" type="range" min="5" max="40" step="1" value="20"><output id="unwrapFsOut">20 Hz</output></label>
+      </div>
+      <p class="note">Notice that if you push the motion amplitude very high <em>and</em> drop the frame rate very low, the unwrap fails — the chest moved more than λ/2 between samples, and there is no way to know it took a long way round versus a short way. <em>Sampling has to be fast enough that motion is unambiguous between frames.</em> That sets the firmware's 20 Hz cadence.</p>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="s8">
+    <div class="copy">
+      <div class="section-num">§ 8</div>
+      <h2>Doppler: motion vs. clutter</h2>
+      <p>Most things in a room reflect strongly and do not move: walls, furniture, the radar's own bracket. If we just look at "the strongest range bin" we will lock onto a wall. Our subject — a breathing person — is much fainter than the wall and only distinguishable by the fact that <em>something inside their range cell is moving.</em></p>
+      <p>To suppress static reflections, the radar collects 32 chirps in a burst and runs a <em>second</em> FFT — across the chirps, not within them. That axis is called <em>slow time</em>, and the FFT along it is the <em>Doppler FFT</em>. Stationary scatterers concentrate at zero Doppler; anything moving spreads to non-zero bins. The MR60BHA2 picks its breathing target from the range bin with the strongest non-zero Doppler energy.</p>
+      <p>The figure is a 2D heatmap: range on the horizontal axis, Doppler on the vertical. The bright stripe across the middle is the zero-Doppler clutter. Move the person slider to choose where the body sits in range. Move the breath slider to give them more or less chest motion: the dim spot on either side of the central stripe brightens.</p>
+    </div>
+    <div class="figure">
+      <div class="figure-title"><span>Figure 8 · range-Doppler heatmap</span><span class="hint">place the person, give them breath</span></div>
+      <canvas id="dopplerCanvas" class="tall-canvas" aria-label="Range-Doppler heatmap with adjustable target"></canvas>
+      <div class="controls two">
+        <label><span>Person at</span><input id="personRangeSlider" type="range" min="20" max="200" step="1" value="60"><output id="personRangeOut">0.60 m</output></label>
+        <label><span>Breath energy</span><input id="breathEnergySlider" type="range" min="0" max="1" step="0.01" value="0.5"><output id="breathEnergyOut">0.50</output></label>
+      </div>
+      <p class="note">As you can see, the person sits next to the bright clutter stripe but slightly off it — that is the only place a breathing target can show up. The firmware's target-detection routine essentially looks for "highest energy that is not on the central stripe", then commits to that range bin's complex value as the source of phase for the rest of the pipeline.</p>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="s9">
+    <div class="copy">
+      <div class="section-num">§ 9</div>
+      <h2>A breath waveform you can play with</h2>
+      <p>Now we have everything we need to construct a synthetic version of the signal that arrives at the firmware's filter stage. We pick a range bin (Section 5), read its phase (Section 6), unwrap it (Section 7), reject the clutter behind it (Section 8). What we get out, converted from radians of phase back to millimetres of displacement, looks unmistakably like breathing — with a small heartbeat ripple riding on top.</p>
+      <p>The figure shows ten seconds of simulated chest motion. The combined trace is what the firmware sees just before it starts filtering. Notice how the heart ripple is barely visible at typical amplitudes, and how breath irregularity (which is the rule, not the exception) makes the signal anything but a clean sinusoid.</p>
+      <p>Toggle the <em>noise</em> switch. In real measurements, even after Doppler filtering, there is residual phase noise from the receiver chain, atmospheric jitter, target wobble. <em>That is what the firmware's filters are trying to reject.</em></p>
+    </div>
+    <div class="figure">
+      <div class="figure-title"><span>Figure 9 · simulated phase waveform</span><span class="hint">breath, heart, and noise</span></div>
+      <canvas id="breathHeartCanvas" class="tall-canvas" aria-label="Simulated breath plus heart phase waveform"></canvas>
+      <div class="controls two">
+        <label><span>Breath rate</span><input id="bhBreathRate" type="range" min="6" max="24" step="0.5" value="14"><output id="bhBreathRateOut">14 BPM</output></label>
+        <label><span>Heart rate</span><input id="bhHeartRate" type="range" min="40" max="120" step="1" value="68"><output id="bhHeartRateOut">68 BPM</output></label>
+        <label><span>Heart amp.</span><input id="bhHeartAmp" type="range" min="0" max="1" step="0.02" value="0.3"><output id="bhHeartAmpOut">0.30 mm</output></label>
+        <label><span>Noise</span><input id="bhNoise" type="range" min="0" max="0.6" step="0.02" value="0.15"><output id="bhNoiseOut">0.15</output></label>
+      </div>
+      <p class="note">Listen to the visual rhythm. The breath cycle is the dominant beat your eye finds first. The heart ripple is what your eye finds second, after you stop looking at the obvious. The firmware has to find the heart deterministically, which is harder than it looks.</p>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="s10">
+    <div class="copy">
+      <div class="section-num">§ 10</div>
+      <h2>Filtering — and what it costs</h2>
+      <p>Breath sits roughly between 0.1 and 0.5 Hz. Heart sits between 0.8 and 2 Hz. Two band-pass filters, one tuned to each band, would seem to do the job — and they do. The trouble is the price.</p>
+      <p>A filter's sharpness in the frequency domain is paid for in the time domain. The narrower the passband, the longer the filter <em>rings</em> in response to anything new at its input. Show a sharp band-pass a step, and its output sloshes back and forth for many cycles before settling. <em>That sloshing is the reason the firmware's <code>breath_phase</code> output lags.</em></p>
+      <p>Drag the filter's quality factor Q. The frequency response on the left becomes a tighter spike around 0.3 Hz; the impulse response on the right becomes a longer ringing tail. The left view <em>flatters</em> the filter — "look how cleanly it passes only breathing!" The right view tells the truth — "look how long it takes to admit that the input has changed."</p>
+      <span class="equation">
+        settling time ≈ 2 · Q / ω<sub>0</sub>
+        <span class="where">Q = quality factor of the band-pass; ω<sub>0</sub> = centre frequency in radians/second.</span>
+      </span>
+      <p>For a band-pass centred at 0.3 Hz (ω<sub>0</sub> ≈ 1.9 rad/s), Q = 5 gives about 5.3 seconds of settling. Q = 10 gives 10.6 seconds. <em>This is not an implementation bug — it is a property of any sharp filter at this frequency.</em></p>
+    </div>
+    <div class="figure">
+      <div class="figure-title"><span>Figure 10 · selectivity vs. settling</span><span class="hint">drag Q</span></div>
+      <canvas id="filterCanvas" class="tall-canvas" aria-label="Frequency response and step response of a band-pass filter"></canvas>
+      <div class="legend">
+        <span><span class="swatch" style="background:var(--accent);"></span>frequency response (left)</span>
+        <span><span class="swatch" style="background:var(--accent-2);"></span>step response (right)</span>
+      </div>
+      <div class="controls">
+        <label><span>Filter Q</span><input id="qSlider" type="range" min="1" max="20" step="0.1" value="6"><output id="qOut">6.0</output></label>
+      </div>
+      <div class="readout">
+        <div><strong id="settleRead">— s</strong><span>settling time</span></div>
+        <div><strong id="bw3dbRead">— Hz</strong><span>3 dB bandwidth</span></div>
+        <div><strong>0.30 Hz</strong><span>centre frequency</span></div>
+      </div>
+      <p class="note">As you can see, the only way to make the filter <em>stop ringing</em> within a second is to make it so wide it admits the heartbeat too. The breath and heart bands sit close enough together that any filter sharp enough to separate them must, by physics, ring for several seconds.</p>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="s11">
+    <div class="copy">
+      <div class="section-num">§ 11</div>
+      <h2>Inside the MR60BHA2</h2>
+      <p>So much for principles. Now we can read the MR60BHA2's brain. What follows is the pipeline as recovered from a Ghidra disassembly of firmware version 1.6.12, redrawn as a flowchart and reconstructed in C. (The actual code is hand-written ARM Thumb assembly with software-emulated floating point, since the Andar ADT6101P core has no FPU; the C below is the cleanest equivalent we could write.)</p>
+      <p>Click each stage to see what it does. The arrows on the diagram light up; the C panel below shows the corresponding code. The whole loop runs at 20 Hz — once every 50 milliseconds, an interrupt service routine signals "fresh frame", the main loop wakes, runs every box you see here in order, and goes back to sleep.</p>
+      <p>One detail worth pointing at: the on-chip <em>hardware FFT engine</em> at memory-mapped address <code>0x40022000</code>. Without it, the range FFT (256 points × 32 chirps × 4 antennas = 32768 complex points per frame) would not finish in 50 ms on a no-FPU Cortex-M. With it, range and Doppler FFTs cost a few microseconds each.</p>
+    </div>
+    <div class="figure">
+      <div class="figure-title"><span>Figure 11 · MR60BHA2 firmware pipeline (v1.6.12)</span><span class="hint">click a stage</span></div>
+      <div class="canvas-host" id="pipelineHost" style="height:340px"></div>
+      <div class="stage-tabs" id="stageTabs"></div>
+      <div class="stage-body">
+        <div class="stage-summary" id="stageSummary"></div>
+        <pre class="code" id="stageCode"></pre>
+      </div>
+      <p class="note">Notice that the live phase output (<code>0x0A13</code>, three floats per frame) and the rate output (<code>0x0A14</code>, <code>0x0A15</code>, one float per frame) come from <em>different</em> branches. The phase branch is one-frame-in-one-frame-out except for the IIRs. The rate branch passes through a 128-sample shift register. Those two branches have very different latency — which is why the next section exists.</p>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="s12">
+    <div class="copy">
+      <div class="section-num">§ 12</div>
+      <h2>Where the five seconds came from</h2>
+      <p>We can now answer the question that started this investigation. The host receives three relevant signals from the radar:</p>
+      <ul>
+        <li><code>total_phase</code> — the first float of every <code>0x0A13</code> frame, sent at 20 Hz, no buffering, no filtering between phase extraction and UART. Real-time.</li>
+        <li><code>breath_phase</code> — the second float of <code>0x0A13</code>, the output of a 4-section biquad IIR cascade band-pass-tuned for breath. Adds the IIR's settling time, which by Section 10 is several seconds for any filter narrow enough to be clean.</li>
+        <li><code>breath_rate</code> — the payload of every <code>0x0A14</code> frame, computed from a 256-point FFT over a 128-sample shift register of past <code>breath_phase</code> values. The shift register has to fill before the FFT means anything: 128 samples ÷ 20 Hz = <em>6.4 seconds of buffer-fill latency</em>, every time the system starts or the target is reacquired.</li>
+      </ul>
+      <p>The figure makes the difference physical. The top trace is the live <code>total_phase</code>, no smoothing. The middle is <code>breath_phase</code>, dragging behind by the filter's settling. The bottom is the BPM's shift register filling up: the dotted line is "how full the buffer is right now"; until it crosses the right edge, the BPM number is meaningless.</p>
+      <p>Press <em>start</em>. The clock advances. Your firmware sees the same chest motion you saw in earlier sections — but the three downstream views diverge sharply.</p>
+    </div>
+    <div class="figure">
+      <div class="figure-title"><span>Figure 12 · three views of the same input</span><span class="hint">start the clock</span></div>
+      <canvas id="latencyCanvas" class="tall-canvas" aria-label="Three views of the firmware latency"></canvas>
+      <div class="legend">
+        <span><span class="swatch" style="background:var(--accent);"></span>raw total_phase (real time)</span>
+        <span><span class="swatch" style="background:var(--accent-2);"></span>firmware breath_phase (IIR)</span>
+        <span><span class="swatch" style="background:var(--accent-3);"></span>BPM buffer fill (128-sample ring)</span>
+      </div>
+      <div class="controls two">
+        <label><span>IIR settling</span><input id="iirSlider" type="range" min="1" max="10" step="0.1" value="5"><output id="iirOut">5.0 s</output></label>
+        <div class="button-row">
+          <button id="latencyStart">Start</button>
+          <button id="latencyReset">Reset</button>
+        </div>
+      </div>
+      <div class="readout">
+        <div><strong id="elapsedRead">0.0 s</strong><span>time elapsed</span></div>
+        <div><strong id="bufferRead">0/128</strong><span>BPM ring fill</span></div>
+        <div><strong id="bpmReadyRead">no</strong><span>BPM meaningful?</span></div>
+      </div>
+      <p class="note">Notice that even when the IIR has settled, the BPM ring is still filling. The 6.4-second buffer-fill is the firmware's hard floor — there is no command in v1.6.12 that selects a shorter buffer. We checked.</p>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="s13">
+    <div class="copy">
+      <div class="section-num">§ 13</div>
+      <h2>The escape hatch</h2>
+      <p>The first float of every 0x0A13 frame — the one the library calls <code>total_phase</code> — has none of these problems. It does not pass through the IIR. It does not feed any shift register. It is the per-frame phase delta, freshly computed and shipped over UART within the same 50 ms window.</p>
+      <p>If we accept that this is a <em>velocity</em>-like signal, not a smoothed displacement, we can do our own filtering on the host with whatever latency budget we can afford. The Arduino sketch in this project does exactly that: a slew limiter to clip phase-unwrap glitches, and a one-pole low-pass to take the edge off, and that is all. Total added latency: about 300 milliseconds.</p>
+      <p>The figure runs the actual sketch's filter on the same simulated chest motion. The orange line is what the firmware would publish on <code>breath_phase</code>; the black line is what we publish on <code>hands/mmwave/smooth_fast_breath</code>. The black line is a fraction of a second behind reality. The orange line, on this scale, is barely past its first inhale.</p>
+    </div>
+    <div class="figure">
+      <div class="figure-title"><span>Figure 13 · the actual breath_demo filter</span><span class="hint">tune your tolerances</span></div>
+      <canvas id="escapeCanvas" class="tall-canvas" aria-label="Live demonstration of the breath_demo filter pipeline"></canvas>
+      <div class="legend">
+        <span><span class="swatch" style="background:#aaa;"></span>true motion</span>
+        <span><span class="swatch" style="background:var(--accent);"></span>firmware breath_phase (slow)</span>
+        <span><span class="swatch" style="background:var(--ink-strong);"></span>our smooth_fast_breath</span>
+      </div>
+      <div class="controls two">
+        <label><span>Max step</span><input id="maxStepSlider" type="range" min="0.1" max="2" step="0.05" value="0.7"><output id="maxStepOut">0.70</output></label>
+        <label><span>Alpha</span><input id="alphaSlider" type="range" min="0.03" max="0.6" step="0.01" value="0.15"><output id="alphaOut">0.15</output></label>
+      </div>
+      <p class="note">This is the entire content of <code>breath_demo.ino</code>'s signal path, ten lines of C. As you can see, the trick is not to filter <em>better</em> than the firmware. It is to filter <em>somewhere else</em>, where we control the latency budget against the application — a synth where 300 ms feels alive and 5 s feels broken.</p>
+      <pre class="code">
+<span class="com">// breath_demo.ino — what the radar publishes vs. what we publish.</span>
+<span class="kw">const</span> <span class="ty">float</span> ALPHA    = <span class="num">0.15f</span>;   <span class="com">// 1-pole low-pass coefficient</span>
+<span class="kw">const</span> <span class="ty">float</span> MAX_STEP = <span class="num">0.70f</span>;   <span class="com">// slew clip, in the same units as total_phase</span>
+
+<span class="ty">void</span> <span class="fn">loop</span>() {
+  <span class="kw">if</span> (!mmWave.<span class="fn">update</span>(0)) <span class="kw">return</span>;
+  <span class="ty">float</span> total_phase, _, _;
+  <span class="kw">if</span> (!mmWave.<span class="fn">getHeartBreathPhases</span>(total_phase, _, _)) <span class="kw">return</span>;
+
+  <span class="ty">float</span> bounded = <span class="fn">constrain</span>(total_phase,
+                              smooth - MAX_STEP, smooth + MAX_STEP);
+  smooth = ALPHA * bounded + (<span class="num">1.0f</span> - ALPHA) * smooth;
+
+  <span class="fn">publishFloat</span>(<span class="str">"hands/mmwave/smooth_fast_breath"</span>, smooth);
+}</pre>
+    </div>
+  </section>
+
+  <div class="pull">
+    The chip's output is not wrong — it is honestly slow, by physics. The fix is not to second-guess the firmware's filter design. It is to take the unfiltered signal it already provides and shape it for the application that needs it.
+  </div>
+
+  <footer>
+    <h3>What this page assumes vs. what it shows</h3>
+    <p>Sections 1 to 10 are first-principles FMCW radar — the equations are textbook (Jankiraman, Patole, Goldsmith). The synthetic waveforms in figures 1, 9, 12, 13 are simulations, not measurements from the device. They are sized to typical clinical mmWave-vital-signs literature and labelled as approximate.</p>
+    <p>Sections 11 and 12 reconstruct the MR60BHA2 firmware's pipeline from a Ghidra disassembly of <code>MR60BHA2_eeprom_1.6.12.bin</code> (42 356 bytes) performed in this project. Block diagrams and reconstructed C are inferred from disassembled Thumb-2 functions and call graph; the <em>structure</em> is verified, but two specific numbers are not directly read from the firmware:</p>
+    <ul>
+      <li>The exact biquad coefficients of the breath and heart IIRs live at flash offset <code>0x00011B10</code>, which is past the end of the 42 KB OTA image. Their existence and topology (4-section / 8-section cascade, plus per-section gains) is verified; the centre frequencies and Q values used in the figures are inferred from the band edges of the BPM peak-pick (bins 1–7 for breath, bins 12–30 for heart) and are consistent with — but not proven equal to — values in published literature on biquad-cascade breath/heart separation.</li>
+      <li>The radar's exact range cell width and chirp bandwidth are not directly read from the OTA blob; the figures use 5 cm and 3 GHz respectively, the values published in the MR60BHA2 datasheet. Range FFT length (256), Doppler FFT length (32), and frame rate (20 Hz) <em>are</em> verified from disassembly.</li>
+    </ul>
+    <h3>Model limits</h3>
+    <ul>
+      <li>The "settling time ≈ 2Q/ω<sub>0</sub>" rule is the second-order approximation. A 4-section biquad cascade can ring longer or shorter depending on how the sections are tuned; we have not characterised the actual ringing of v1.6.12's specific design.</li>
+      <li>Real radar data has phase-unwrap failures, target-bin reselection events, and motion-mode switches that this page does not simulate. The synthetic waveforms are well-behaved; the real ones are messier.</li>
+      <li>The page treats "breath_phase = filtered total_phase". The firmware actually feeds the IIR with the per-frame difference Δφ, not the accumulated phase. The visual consequence is a 90° phase shift, not a magnitude or latency change, and is not material to any conclusion drawn here.</li>
+    </ul>
+    <h3>What you can do next</h3>
+    <ul>
+      <li>Run <code>breath_demo.ino</code> on your own MR60BHA2; capture <code>total_phase</code> alongside <code>breath_phase</code> and compare them on the same time axis. The latency we describe should be visible.</li>
+      <li>Replace the one-pole low-pass with a real band-pass (Butterworth, 0.1–0.5 Hz, second-order) on the host. You will get a cleaner-looking trace at the cost of about half a second of additional latency. That is the same physics the firmware is paying for, just paid by you.</li>
+      <li>If you want absolute certainty about the firmware's IIR coefficients, dump the device's flash via SWD; the relevant region is <code>0x00010000</code> to <code>0x00012000</code>.</li>
+    </ul>
+    <h3>Sources</h3>
+    <ul>
+      <li>Reverse-engineering output and Ghidra scripts: <code>breath_demo/tmp/</code> in this project.</li>
+      <li>FMCW first principles: Jankiraman, <em>FMCW Radar Design</em> (Artech House, 2018); Patole et al., <em>Automotive Radars</em> (IEEE Sig. Proc. Mag., 2017).</li>
+      <li>Vital-signs amplitude ranges: Mercuri et al., <em>2-D localization of breathing persons</em> (IEEE Sensors J., 2019); Yang et al., <em>Vital-Sign Monitoring</em> (Proc. IEEE, 2019).</li>
+      <li>Seeed mmWave Arduino library: <code>~/Documents/Arduino/libraries/Seeed-mmWave-library</code>.</li>
+    </ul>
+  </footer>
+</main>
+
+<script type="module">
+//
+// =========================================================================
+//   utility helpers
+// =========================================================================
+//
+const $ = (id) => document.getElementById(id);
+const TAU = Math.PI * 2;
+const REDUCED = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+const COLOR = {
+  ink: "#444",
+  inkStrong: "#2b2b2b",
+  muted: "#76716a",
+  line: "#c9c1b4",
+  lineDark: "#918879",
+  accent: "#c64d2e",
+  accent2: "#2f6f73",
+  accent3: "#6b5b95",
+  paper: "#fbfaf6",
+  panel: "#fffdf8",
+};
+
+function fit(canvas) {
+  const rect = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.max(1, Math.floor(rect.width * dpr));
+  canvas.height = Math.max(1, Math.floor(rect.height * dpr));
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return { ctx, w: rect.width, h: rect.height };
+}
+
+function axes(ctx, w, h, opts = {}) {
+  const padL = opts.padL ?? 46;
+  const padR = opts.padR ?? 14;
+  const padT = opts.padT ?? 22;
+  const padB = opts.padB ?? 34;
+  ctx.clearRect(0, 0, w, h);
+  ctx.strokeStyle = COLOR.lineDark;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(padL, padT);
+  ctx.lineTo(padL, h - padB);
+  ctx.lineTo(w - padR, h - padB);
+  ctx.stroke();
+  ctx.fillStyle = COLOR.muted;
+  ctx.font = "11px Helvetica, Arial, sans-serif";
+  if (opts.labelY) ctx.fillText(opts.labelY, 6, padT - 6);
+  if (opts.labelX) ctx.fillText(opts.labelX, w - padR - 50, h - 12);
+  return { padL, padR, padT, padB, plotW: w - padL - padR, plotH: h - padT - padB };
+}
+
+function gridY(ctx, plot, w, h, count = 4, padL, padB) {
+  ctx.strokeStyle = "rgba(145,136,121,0.3)";
+  ctx.lineWidth = 0.5;
+  for (let i = 1; i < count; i++) {
+    const y = padB + (plot.plotH / count) * i;
+    ctx.beginPath();
+    ctx.moveTo(padL, h - y);
+    ctx.lineTo(w - plot.padR, h - y);
+    ctx.stroke();
+  }
+}
+
+function plotLine(ctx, data, plot, w, h, opts) {
+  const { color, width = 2, yMin = -1, yMax = 1, dashed = false, alpha = 1 } = opts;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  if (dashed) ctx.setLineDash([5, 4]);
+  ctx.beginPath();
+  const range = yMax - yMin;
+  data.forEach((v, i) => {
+    const x = plot.padL + (i / (data.length - 1)) * plot.plotW;
+    const y = h - plot.padB - ((v - yMin) / range) * plot.plotH;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+  ctx.restore();
+}
+
+//
+// =========================================================================
+//   § 1   chest displacement
+// =========================================================================
+//
+const chestState = { breathRate: 14, breathAmp: 6, heartRate: 68, heartAmp: 0.3 };
+
+function buildChestData(n = 480, durationS = 10, st = chestState) {
+  const breathHz = st.breathRate / 60;
+  const heartHz  = st.heartRate / 60;
+  const breath = [], heart = [], sum = [];
+  for (let i = 0; i < n; i++) {
+    const t = (i / n) * durationS;
+    // Slightly asymmetric breath shape (longer exhale than inhale) — typical of resting respiration.
+    const phaseB = TAU * breathHz * t;
+    const b = (Math.sin(phaseB) + 0.18 * Math.sin(2 * phaseB - 0.4)) * (st.breathAmp / 2);
+    const h = Math.sin(TAU * heartHz * t + Math.cos(phaseB) * 0.4) * st.heartAmp;
+    breath.push(b);
+    heart.push(h);
+    sum.push(b + h);
+  }
+  return { breath, heart, sum };
+}
+
+function drawChest() {
+  const { ctx, w, h } = fit($("chestCanvas"));
+  const plot = axes(ctx, w, h, { labelY: "displacement (mm)", labelX: "time (s)" });
+  // Grid lines.
+  ctx.strokeStyle = "rgba(145,136,121,0.25)";
+  ctx.lineWidth = 0.5;
+  for (let s = 0; s <= 10; s++) {
+    const x = plot.padL + (s / 10) * plot.plotW;
+    ctx.beginPath();
+    ctx.moveTo(x, plot.padT);
+    ctx.lineTo(x, h - plot.padB);
+    ctx.stroke();
+    ctx.fillStyle = COLOR.muted;
+    ctx.font = "10px Helvetica, Arial, sans-serif";
+    ctx.fillText(`${s}s`, x - 6, h - 18);
+  }
+  // y-axis labels for ±5 mm.
+  ctx.fillStyle = COLOR.muted;
+  for (const tick of [-5, -2.5, 0, 2.5, 5]) {
+    const y = h - plot.padB - ((tick + 6) / 12) * plot.plotH;
+    ctx.fillText(`${tick > 0 ? "+" : ""}${tick}`, 8, y + 3);
+    ctx.strokeStyle = "rgba(145,136,121,0.18)";
+    ctx.beginPath();
+    ctx.moveTo(plot.padL, y);
+    ctx.lineTo(w - plot.padR, y);
+    ctx.stroke();
+  }
+
+  const d = buildChestData();
+  plotLine(ctx, d.breath, plot, w, h, { color: COLOR.accent2, width: 1.6, yMin: -6, yMax: 6, alpha: 0.7 });
+  plotLine(ctx, d.heart,  plot, w, h, { color: COLOR.accent3, width: 1.2, yMin: -6, yMax: 6, alpha: 0.65 });
+  plotLine(ctx, d.sum,    plot, w, h, { color: COLOR.inkStrong, width: 2.6, yMin: -6, yMax: 6 });
+}
+
+["breathRateSlider","breathAmpSlider","heartRateSlider","heartAmpSlider"].forEach((id) => {
+  $(id).addEventListener("input", (e) => {
+    const v = Number(e.target.value);
+    if (id === "breathRateSlider") { chestState.breathRate = v; $("breathRateOut").textContent = `${v.toFixed(1)} BPM`; }
+    if (id === "breathAmpSlider")  { chestState.breathAmp  = v; $("breathAmpOut").textContent  = `${v.toFixed(1)} mm`; }
+    if (id === "heartRateSlider")  { chestState.heartRate  = v; $("heartRateOut").textContent  = `${v} BPM`; }
+    if (id === "heartAmpSlider")   { chestState.heartAmp   = v; $("heartAmpOut").textContent   = `${v.toFixed(2)} mm`; }
+    drawChest();
+  });
+});
+
+//
+// =========================================================================
+//   § 2   wavelength versus frequency
+// =========================================================================
+//
+const lambdaState = { freq: 60 };
+
+function drawLambda() {
+  const { ctx, w, h } = fit($("lambdaCanvas"));
+  ctx.clearRect(0, 0, w, h);
+
+  const c = 3e8; // m/s
+  const lambdaM = c / (lambdaState.freq * 1e9);
+  const lambdaMm = lambdaM * 1000;
+  const degPerMm = (4 * Math.PI / lambdaMm) * (180 / Math.PI);
+  $("freqRead").textContent       = `${lambdaState.freq} GHz`;
+  $("lambdaRead").textContent     = `${lambdaMm.toFixed(2)} mm`;
+  $("halfLambdaRead").textContent = `${(lambdaMm/2).toFixed(2)} mm`;
+  $("degPerMmRead").textContent   = degPerMm > 720 ? `>720°` : `${degPerMm.toFixed(0)}°`;
+
+  // Visual: draw 1mm "chest motion" bar at fixed pixel scale, then draw the carrier wave at the real
+  // pixel-to-mm ratio so the reader can SEE that 5 GHz wave is ~12cm long while 60 GHz wave is ~5mm.
+  const mmToPx = 14;            // pixels per mm at all times
+  const baseY = h * 0.55;
+  ctx.fillStyle = COLOR.muted;
+  ctx.font = "12px Helvetica, Arial, sans-serif";
+  ctx.fillText("scale: 1 mm = 14 px (true to scale)", 14, 22);
+
+  // Reference 1 mm chest motion arrow.
+  const arrowX = w * 0.5;
+  ctx.strokeStyle = COLOR.accent;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(arrowX, baseY + 60);
+  ctx.lineTo(arrowX + mmToPx, baseY + 60);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(arrowX, baseY + 56); ctx.lineTo(arrowX, baseY + 64);
+  ctx.moveTo(arrowX + mmToPx, baseY + 56); ctx.lineTo(arrowX + mmToPx, baseY + 64);
+  ctx.stroke();
+  ctx.fillStyle = COLOR.accent;
+  ctx.fillText("1 mm chest motion", arrowX - 38, baseY + 80);
+
+  // The wave itself, drawn at scale.
+  const wavelengthPx = lambdaMm * mmToPx;
+  ctx.strokeStyle = COLOR.accent2;
+  ctx.lineWidth = 1.8;
+  ctx.beginPath();
+  for (let x = 14; x < w - 14; x++) {
+    const phase = ((x - 14) / wavelengthPx) * TAU;
+    const y = baseY - Math.sin(phase) * 30;
+    if (x === 14) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // Wavelength annotation marker.
+  if (wavelengthPx < w - 60) {
+    const ax = 60;
+    ctx.strokeStyle = COLOR.ink;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(ax, baseY - 50); ctx.lineTo(ax + wavelengthPx, baseY - 50);
+    ctx.moveTo(ax, baseY - 46); ctx.lineTo(ax, baseY - 54);
+    ctx.moveTo(ax + wavelengthPx, baseY - 46); ctx.lineTo(ax + wavelengthPx, baseY - 54);
+    ctx.stroke();
+    ctx.fillStyle = COLOR.ink;
+    ctx.fillText(`λ = ${lambdaMm.toFixed(2)} mm`, ax + wavelengthPx / 2 - 30, baseY - 58);
+  } else {
+    ctx.fillStyle = COLOR.ink;
+    ctx.fillText(`λ = ${lambdaMm.toFixed(1)} mm  (longer than the figure!)`, 18, baseY - 50);
+  }
+}
+
+$("freqSlider").addEventListener("input", (e) => {
+  lambdaState.freq = Number(e.target.value);
+  $("freqOut").textContent = `${lambdaState.freq} GHz`;
+  drawLambda();
+});
+
+//
+// =========================================================================
+//   § 3   single tone, no time reference
+// =========================================================================
+//
+const cwState = { range: 1.0 };
+
+function drawCw() {
+  const { ctx, w, h } = fit($("cwCanvas"));
+  ctx.clearRect(0, 0, w, h);
+
+  const sensorX = 60;
+  const targetX = sensorX + (cwState.range / 3) * (w - 120);
+  const txY = h * 0.32;
+  const rxY = h * 0.72;
+
+  // Antenna and target glyphs.
+  ctx.fillStyle = COLOR.ink;
+  ctx.font = "12px Helvetica, Arial, sans-serif";
+  ctx.fillText("antenna", sensorX - 20, txY - 24);
+  ctx.strokeStyle = COLOR.ink;
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(sensorX - 12, txY - 16, 24, 80);
+
+  ctx.fillText("target", targetX - 12, txY - 24);
+  ctx.fillStyle = "rgba(198,77,46,0.18)";
+  ctx.fillRect(targetX - 4, txY - 16, 8, 80);
+  ctx.strokeStyle = COLOR.accent;
+  ctx.strokeRect(targetX - 4, txY - 16, 8, 80);
+
+  // Outgoing wave (transmitted, going right).
+  ctx.strokeStyle = COLOR.accent;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let x = sensorX + 12; x <= targetX; x++) {
+    const phase = (x - sensorX) * 0.13;
+    const y = txY + Math.sin(phase) * 14;
+    if (x === sensorX + 12) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+  ctx.fillStyle = COLOR.accent;
+  ctx.fillText("outgoing", sensorX + 16, txY - 22);
+
+  // Returning wave (echo, going left), phase-shifted by round trip.
+  // Length is identical because we're looking at the same reach; only the shift changes.
+  const phaseShift = (cwState.range * 4 * Math.PI / 0.005) % TAU;
+  ctx.strokeStyle = COLOR.accent2;
+  ctx.beginPath();
+  for (let x = targetX; x >= sensorX + 12; x--) {
+    const phase = (x - sensorX) * 0.13 + phaseShift;
+    const y = rxY + Math.sin(phase) * 14;
+    if (x === targetX) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+  ctx.fillStyle = COLOR.accent2;
+  ctx.fillText("returning echo (faintly delayed)", sensorX + 16, rxY + 36);
+
+  // Distance annotation.
+  ctx.strokeStyle = COLOR.ink;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(sensorX, h - 26);
+  ctx.lineTo(targetX, h - 26);
+  ctx.moveTo(sensorX, h - 22); ctx.lineTo(sensorX, h - 30);
+  ctx.moveTo(targetX, h - 22); ctx.lineTo(targetX, h - 30);
+  ctx.stroke();
+  ctx.fillStyle = COLOR.ink;
+  ctx.fillText(`R = ${cwState.range.toFixed(2)} m`, (sensorX + targetX) / 2 - 24, h - 8);
+
+  // The honest "you can't read the delay" annotation.
+  ctx.fillStyle = COLOR.muted;
+  ctx.font = "italic 12px Georgia, serif";
+  ctx.fillText("the wave looks the same every period — no clock to read", w / 2 - 170, 24);
+}
+
+$("cwRangeSlider").addEventListener("input", (e) => {
+  cwState.range = Number(e.target.value);
+  $("cwRangeOut").textContent = `${cwState.range.toFixed(2)} m`;
+  drawCw();
+});
+
+//
+// =========================================================================
+//   § 4   chirp, mix, beat
+// =========================================================================
+//
+const chirpState = { range: 2.0, bw: 3.0 };
+const C_MS = 3e8;
+const T_CHIRP_S = 100e-6; // 100 µs
+
+function drawChirp() {
+  const { ctx, w, h } = fit($("chirpCanvas"));
+  const plot = axes(ctx, w, h, { labelX: "time", labelY: "frequency" });
+
+  const padL = plot.padL, padT = plot.padT, plotW = plot.plotW, plotH = plot.plotH;
+
+  // Up-chirp: tx goes from f0 to f0 + BW over T_chirp.
+  // We display in normalized vertical units: tx covers most of the plot.
+  ctx.strokeStyle = COLOR.accent;
+  ctx.lineWidth = 2.4;
+  ctx.beginPath();
+  ctx.moveTo(padL + 4, h - plot.padB - 0.06 * plotH);
+  ctx.lineTo(padL + plotW - 80, h - plot.padB - 0.84 * plotH);
+  ctx.stroke();
+  ctx.fillStyle = COLOR.accent;
+  ctx.font = "12px Helvetica, Arial, sans-serif";
+  ctx.fillText("transmitted chirp", padL + plotW * 0.4, h - plot.padB - 0.92 * plotH);
+
+  // Echo: same slope, shifted right by tau = 2R/c.
+  // Convert tau to fraction of T_chirp.
+  const tau = (2 * chirpState.range) / C_MS;
+  const tauFrac = tau / T_CHIRP_S;
+  const xShift = tauFrac * plotW * 0.85;
+
+  ctx.strokeStyle = COLOR.accent2;
+  ctx.lineWidth = 2.4;
+  ctx.beginPath();
+  ctx.moveTo(padL + 4 + xShift, h - plot.padB - 0.06 * plotH);
+  ctx.lineTo(padL + plotW - 80 + xShift, h - plot.padB - 0.84 * plotH);
+  ctx.stroke();
+  ctx.fillStyle = COLOR.accent2;
+  ctx.fillText("echo (delayed)", padL + plotW * 0.4 + xShift * 0.4, h - plot.padB - 0.05 * plotH);
+
+  // Beat = vertical gap between the two ramps at any instant.
+  // Pick mid-time to draw the gap arrow.
+  const sampleT = 0.55;
+  const xS = padL + 4 + sampleT * (plotW - 80);
+  const yTx = h - plot.padB - (0.06 + sampleT * 0.78) * plotH;
+  const yRx = h - plot.padB - (0.06 + (sampleT - tauFrac) * 0.78) * plotH;
+  if (sampleT > tauFrac) {
+    ctx.strokeStyle = COLOR.inkStrong;
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(xS, yTx); ctx.lineTo(xS, yRx);
+    ctx.stroke();
+    // Arrowheads.
+    ctx.beginPath();
+    ctx.moveTo(xS - 4, yTx + 6); ctx.lineTo(xS, yTx); ctx.lineTo(xS + 4, yTx + 6);
+    ctx.moveTo(xS - 4, yRx - 6); ctx.lineTo(xS, yRx); ctx.lineTo(xS + 4, yRx - 6);
+    ctx.stroke();
+    ctx.fillStyle = COLOR.inkStrong;
+    ctx.fillText("beat", xS + 8, (yTx + yRx) / 2);
+  }
+
+  // Beat frequency.
+  const fbHz = (2 * chirpState.bw * 1e9 * chirpState.range) / (3e8 * T_CHIRP_S);
+  const rangeResCm = (3e8 / (2 * chirpState.bw * 1e9)) * 100;
+  $("beatFreqRead").textContent  = `${(fbHz / 1e3).toFixed(1)} kHz`;
+  $("rangeResRead").textContent  = `${rangeResCm.toFixed(1)} cm`;
+  $("chirpTimeRead").textContent = `${(T_CHIRP_S * 1e6).toFixed(0)} µs`;
+}
+
+$("chirpRangeSlider").addEventListener("input", (e) => {
+  chirpState.range = Number(e.target.value);
+  $("chirpRangeOut").textContent = `${chirpState.range.toFixed(1)} m`;
+  drawChirp();
+});
+$("chirpBwSlider").addEventListener("input", (e) => {
+  chirpState.bw = Number(e.target.value);
+  $("chirpBwOut").textContent = `${chirpState.bw.toFixed(1)} GHz`;
+  drawChirp();
+});
+
+//
+// =========================================================================
+//   § 5   range FFT
+// =========================================================================
+//
+const rangeState = { a: 14, b: 36, c: 51 };
+const RANGE_FFT_N = 128;     // simulation; real device uses 256 but the picture is the same
+const RANGE_MAX_M = 2.5;     // simulated unambiguous range
+
+function syntheticBeat() {
+  // The beat is a sum of three complex exponentials. We render real part for the time-domain plot.
+  const out = new Array(RANGE_FFT_N).fill(0);
+  const targets = [
+    { idx: rangeState.a, amp: 1.0 },
+    { idx: rangeState.b, amp: 0.7 },
+    { idx: rangeState.c, amp: 0.55 },
+  ];
+  for (let n = 0; n < RANGE_FFT_N; n++) {
+    let v = 0;
+    for (const t of targets) {
+      v += t.amp * Math.cos(TAU * t.idx * n / RANGE_FFT_N);
+    }
+    out[n] = v;
+  }
+  return out;
+}
+
+// Naive O(N^2) DFT magnitude — fine for N=128.
+function dftMag(x) {
+  const N = x.length;
+  const mag = new Array(N / 2).fill(0);
+  for (let k = 0; k < N / 2; k++) {
+    let re = 0, im = 0;
+    for (let n = 0; n < N; n++) {
+      const phase = -TAU * k * n / N;
+      re += x[n] * Math.cos(phase);
+      im += x[n] * Math.sin(phase);
+    }
+    mag[k] = Math.sqrt(re * re + im * im) / N;
+  }
+  return mag;
+}
+
+function drawRange() {
+  const { ctx, w, h } = fit($("rangeCanvas"));
+  ctx.clearRect(0, 0, w, h);
+
+  // Two stacked plots: top = beat time series, bottom = magnitude spectrum.
+  const topH = h * 0.45;
+  const botH = h * 0.55;
+
+  // ---- top plot ----
+  const padL = 50, padR = 14;
+  ctx.strokeStyle = COLOR.lineDark;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(padL, 18); ctx.lineTo(padL, topH - 12); ctx.lineTo(w - padR, topH - 12);
+  ctx.stroke();
+  ctx.fillStyle = COLOR.muted;
+  ctx.font = "11px Helvetica, Arial, sans-serif";
+  ctx.fillText("time-domain beat signal (sum of three sines)", padL + 4, 14);
+  ctx.fillText("samples", w - padR - 50, topH - 2);
+
+  const beat = syntheticBeat();
+  const beatMax = Math.max(...beat.map(Math.abs));
+  ctx.strokeStyle = COLOR.accent2;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  beat.forEach((v, i) => {
+    const x = padL + (i / (beat.length - 1)) * (w - padL - padR);
+    const y = (18 + (topH - 30) / 2) - (v / beatMax) * (topH - 30) * 0.45;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+
+  // ---- bottom plot: magnitude spectrum ----
+  const yTop = topH + 18;
+  const yBot = h - 16;
+  ctx.strokeStyle = COLOR.lineDark;
+  ctx.beginPath();
+  ctx.moveTo(padL, yTop); ctx.lineTo(padL, yBot); ctx.lineTo(w - padR, yBot);
+  ctx.stroke();
+  ctx.fillStyle = COLOR.muted;
+  ctx.fillText("range FFT magnitude (log)", padL + 4, yTop - 4);
+  ctx.fillText("range bin (= distance)", w - padR - 100, yBot + 12);
+
+  const mag = dftMag(beat);
+  const magMax = Math.max(...mag);
+  ctx.fillStyle = COLOR.accent;
+  for (let k = 0; k < mag.length; k++) {
+    const x = padL + (k / mag.length) * (w - padL - padR);
+    const norm = Math.log10(1 + 10 * (mag[k] / magMax));
+    const barH = norm * (yBot - yTop) * 0.75;
+    ctx.fillRect(x, yBot - barH, Math.max(1, (w - padL - padR) / mag.length - 1), barH);
+  }
+
+  // Mark the chest bin.
+  const aX = padL + (rangeState.a / mag.length) * (w - padL - padR);
+  ctx.strokeStyle = COLOR.accent;
+  ctx.setLineDash([4, 3]);
+  ctx.beginPath();
+  ctx.moveTo(aX, yTop); ctx.lineTo(aX, yBot);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = COLOR.accent;
+  ctx.font = "11px Helvetica, Arial, sans-serif";
+  ctx.fillText("chest bin", aX + 4, yTop + 12);
+
+  // Range axis ticks.
+  ctx.fillStyle = COLOR.muted;
+  for (let m = 0; m <= 2; m += 0.5) {
+    const k = (m / RANGE_MAX_M) * mag.length;
+    const x = padL + (k / mag.length) * (w - padL - padR);
+    ctx.fillText(`${m}m`, x - 8, yBot + 14);
+    ctx.strokeStyle = "rgba(145,136,121,0.3)";
+    ctx.beginPath();
+    ctx.moveTo(x, yBot); ctx.lineTo(x, yBot - 4);
+    ctx.stroke();
+  }
+
+  // Update slider readouts.
+  $("tgtAOut").textContent = `${(rangeState.a / mag.length * RANGE_MAX_M).toFixed(2)} m`;
+  $("tgtBOut").textContent = `${(rangeState.b / mag.length * RANGE_MAX_M).toFixed(2)} m`;
+  $("tgtCOut").textContent = `${(rangeState.c / mag.length * RANGE_MAX_M).toFixed(2)} m`;
+}
+
+$("tgtASlider").addEventListener("input", (e) => { rangeState.a = Number(e.target.value); drawRange(); });
+$("tgtBSlider").addEventListener("input", (e) => { rangeState.b = Number(e.target.value); drawRange(); });
+$("tgtCSlider").addEventListener("input", (e) => { rangeState.c = Number(e.target.value); drawRange(); });
+
+//
+// =========================================================================
+//   § 6   complex bin, phase as compass
+// =========================================================================
+//
+const complexState = { mm: 0, lambdaMm: 5.0 };
+
+function drawComplex() {
+  const { ctx, w, h } = fit($("complexCanvas"));
+  ctx.clearRect(0, 0, w, h);
+
+  // Two views side by side: complex plane on left, phase trace on right.
+  const splitX = w * 0.42;
+
+  // ---- complex plane ----
+  const cx = splitX * 0.5;
+  const cy = h * 0.5;
+  const r  = Math.min(splitX, h) * 0.36;
+
+  ctx.fillStyle = COLOR.muted;
+  ctx.font = "11px Helvetica, Arial, sans-serif";
+  ctx.fillText("complex plane (one FFT bin)", 14, 18);
+
+  // Axes and unit circle.
+  ctx.strokeStyle = COLOR.line;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(cx - r * 1.3, cy); ctx.lineTo(cx + r * 1.3, cy);
+  ctx.moveTo(cx, cy - r * 1.3); ctx.lineTo(cx, cy + r * 1.3);
+  ctx.stroke();
+  ctx.strokeStyle = COLOR.lineDark;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, TAU);
+  ctx.stroke();
+  ctx.fillStyle = COLOR.muted;
+  ctx.fillText("Re", cx + r * 1.3 - 4, cy + 14);
+  ctx.fillText("Im", cx - 14, cy - r * 1.3);
+
+  // Phase from chest motion.
+  const phi = (4 * Math.PI * complexState.mm / complexState.lambdaMm);
+  const phiWrap = ((phi + Math.PI) % TAU + TAU) % TAU - Math.PI;
+  const dotX = cx + Math.cos(phiWrap) * r;
+  const dotY = cy - Math.sin(phiWrap) * r;
+
+  // Phase arc from 0 to phiWrap.
+  ctx.strokeStyle = COLOR.accent;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r * 0.45, 0, -phiWrap, phiWrap < 0);
+  ctx.stroke();
+
+  // Radial line + dot.
+  ctx.strokeStyle = COLOR.accent;
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy); ctx.lineTo(dotX, dotY);
+  ctx.stroke();
+  ctx.fillStyle = COLOR.accent;
+  ctx.beginPath();
+  ctx.arc(dotX, dotY, 6, 0, TAU);
+  ctx.fill();
+
+  // ---- phase trace on the right (history of recent positions) ----
+  ctx.fillStyle = COLOR.muted;
+  ctx.fillText("phase angle vs. chest motion", splitX + 14, 18);
+
+  const padL = splitX + 50, padR = 14, padT = 32, padB = 28;
+  const plotW = w - padL - padR;
+  const plotH = h - padT - padB;
+  ctx.strokeStyle = COLOR.lineDark;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(padL, padT); ctx.lineTo(padL, h - padB); ctx.lineTo(w - padR, h - padB);
+  ctx.stroke();
+  ctx.fillStyle = COLOR.muted;
+  ctx.fillText("chest mm", w - padR - 60, h - padB + 14);
+  ctx.fillText("φ (rad)", padL - 38, padT - 4);
+
+  // Tick marks and zero line.
+  ctx.strokeStyle = "rgba(145,136,121,0.4)";
+  ctx.beginPath();
+  ctx.moveTo(padL, padT + plotH * 0.5); ctx.lineTo(w - padR, padT + plotH * 0.5);
+  ctx.stroke();
+  for (const v of [-3, -1.5, 0, 1.5, 3]) {
+    const x = padL + ((v + 3) / 6) * plotW;
+    ctx.beginPath();
+    ctx.moveTo(x, h - padB); ctx.lineTo(x, h - padB + 4);
+    ctx.stroke();
+    ctx.fillStyle = COLOR.muted;
+    ctx.fillText(`${v}`, x - 4, h - padB + 14);
+  }
+
+  // Plot wrapped phase as a function of mm.
+  ctx.strokeStyle = COLOR.accent;
+  ctx.lineWidth = 2;
+  let prevY = null;
+  ctx.beginPath();
+  for (let mm = -3; mm <= 3; mm += 0.01) {
+    const p = (4 * Math.PI * mm / complexState.lambdaMm);
+    const pw = ((p + Math.PI) % TAU + TAU) % TAU - Math.PI;
+    const x = padL + ((mm + 3) / 6) * plotW;
+    const y = padT + plotH * 0.5 - (pw / Math.PI) * plotH * 0.45;
+    if (prevY === null || Math.abs(y - prevY) > 60) {
+      ctx.moveTo(x, y);
+    } else {
+      ctx.lineTo(x, y);
+    }
+    prevY = y;
+  }
+  ctx.stroke();
+
+  // Marker at current mm.
+  const markerX = padL + ((complexState.mm + 3) / 6) * plotW;
+  const markerY = padT + plotH * 0.5 - (phiWrap / Math.PI) * plotH * 0.45;
+  ctx.fillStyle = COLOR.accent;
+  ctx.beginPath();
+  ctx.arc(markerX, markerY, 5, 0, TAU);
+  ctx.fill();
+  ctx.strokeStyle = COLOR.accent;
+  ctx.setLineDash([3, 3]);
+  ctx.beginPath();
+  ctx.moveTo(markerX, padT); ctx.lineTo(markerX, h - padB);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Update readouts.
+  $("phiRadRead").textContent   = `${phi.toFixed(3)} rad`;
+  $("phiDegRead").textContent   = `${(phi * 180 / Math.PI).toFixed(1)}°`;
+  $("phiTurnsRead").textContent = `${(phi / TAU).toFixed(3)}`;
+}
+
+$("microSlider").addEventListener("input", (e) => {
+  complexState.mm = Number(e.target.value);
+  $("microOut").textContent = `${complexState.mm >= 0 ? "+" : ""}${complexState.mm.toFixed(3)} mm`;
+  drawComplex();
+});
+
+//
+// =========================================================================
+//   § 7   wrap and unwrap
+// =========================================================================
+//
+const unwrapState = { amp: 3.5, fs: 20 };
+const LAMBDA_MM = 5.0;
+
+function unwrapPhase(wrapped) {
+  const out = [wrapped[0]];
+  let offset = 0;
+  for (let i = 1; i < wrapped.length; i++) {
+    let d = wrapped[i] - wrapped[i - 1];
+    if (d >  Math.PI) offset -= TAU;
+    if (d < -Math.PI) offset += TAU;
+    out.push(wrapped[i] + offset);
+  }
+  return out;
+}
+
+function drawUnwrap() {
+  const { ctx, w, h } = fit($("unwrapCanvas"));
+  ctx.clearRect(0, 0, w, h);
+  const dur = 8; // seconds
+  const n = Math.max(8, Math.round(dur * unwrapState.fs));
+  const cycleHz = 0.25; // breath-like
+
+  const truth = [], wrapped = [];
+  for (let i = 0; i < n; i++) {
+    const t = (i / unwrapState.fs);
+    const mm = unwrapState.amp * Math.sin(TAU * cycleHz * t);
+    const phi = (4 * Math.PI * mm / LAMBDA_MM);
+    const phiWrap = ((phi + Math.PI) % TAU + TAU) % TAU - Math.PI;
+    truth.push(mm);
+    wrapped.push(phiWrap);
+  }
+  const unwrapped = unwrapPhase(wrapped);
+
+  // Top half: wrapped; bottom half: unwrapped.
+  const padL = 56, padR = 16, midY = h * 0.5;
+
+  // Top axes.
+  ctx.strokeStyle = COLOR.lineDark;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(padL, 18); ctx.lineTo(padL, midY - 8); ctx.lineTo(w - padR, midY - 8);
+  ctx.stroke();
+  ctx.fillStyle = COLOR.muted;
+  ctx.font = "11px Helvetica, Arial, sans-serif";
+  ctx.fillText("raw atan2 phase  (wraps every λ/2 of round trip)", padL + 4, 14);
+
+  // Bottom axes.
+  ctx.beginPath();
+  ctx.moveTo(padL, midY + 18); ctx.lineTo(padL, h - 24); ctx.lineTo(w - padR, h - 24);
+  ctx.stroke();
+  ctx.fillText("unwrapped phase + true motion (rescaled, dim grey)", padL + 4, midY + 14);
+  ctx.fillText("time →", w - padR - 50, h - 8);
+
+  // ----- wrapped trace (segmented) -----
+  const plotW = w - padL - padR;
+  ctx.strokeStyle = COLOR.accent;
+  ctx.lineWidth = 1.6;
+  let prevY = null;
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) {
+    const x = padL + (i / (n - 1)) * plotW;
+    const y = 22 + (midY - 38) / 2 - (wrapped[i] / Math.PI) * (midY - 38) * 0.45;
+    if (prevY === null || Math.abs(y - prevY) > 60) {
+      ctx.moveTo(x, y);
+    } else {
+      ctx.lineTo(x, y);
+    }
+    prevY = y;
+  }
+  ctx.stroke();
+
+  // ----- unwrapped + truth -----
+  // Unwrap range
+  const uMin = Math.min(...unwrapped);
+  const uMax = Math.max(...unwrapped);
+  const uRange = Math.max(0.1, uMax - uMin);
+  const tMin = Math.min(...truth);
+  const tMax = Math.max(...truth);
+  const tRange = Math.max(0.001, tMax - tMin);
+  const trackY0 = midY + 22, trackY1 = h - 26;
+
+  ctx.strokeStyle = "rgba(145,136,121,0.6)";
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) {
+    const x = padL + (i / (n - 1)) * plotW;
+    const norm = (truth[i] - tMin) / tRange;
+    const y = trackY1 - norm * (trackY1 - trackY0);
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  ctx.strokeStyle = COLOR.accent2;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) {
+    const x = padL + (i / (n - 1)) * plotW;
+    const norm = (unwrapped[i] - uMin) / uRange;
+    const y = trackY1 - norm * (trackY1 - trackY0);
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // λ/2 bar.
+  if (unwrapState.amp > LAMBDA_MM / 2) {
+    ctx.strokeStyle = COLOR.accent;
+    ctx.setLineDash([4, 4]);
+    ctx.lineWidth = 1;
+    const yLine = 22 + (midY - 38) / 2 - (Math.PI / Math.PI) * (midY - 38) * 0.45;
+    ctx.beginPath();
+    ctx.moveTo(padL, yLine); ctx.lineTo(w - padR, yLine);
+    ctx.moveTo(padL, midY - 8 - (yLine - 22)); ctx.lineTo(w - padR, midY - 8 - (yLine - 22));
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = COLOR.accent;
+    ctx.fillText("± π wrap thresholds", w - padR - 110, yLine - 4);
+  }
+}
+
+$("unwrapAmpSlider").addEventListener("input", (e) => {
+  unwrapState.amp = Number(e.target.value);
+  $("unwrapAmpOut").textContent = `${unwrapState.amp.toFixed(1)} mm`;
+  drawUnwrap();
+});
+$("unwrapFsSlider").addEventListener("input", (e) => {
+  unwrapState.fs = Number(e.target.value);
+  $("unwrapFsOut").textContent = `${unwrapState.fs} Hz`;
+  drawUnwrap();
+});
+
+//
+// =========================================================================
+//   § 8   doppler heatmap
+// =========================================================================
+//
+const dopplerState = { personRange: 60, breathEnergy: 0.5 };
+
+function drawDoppler() {
+  const { ctx, w, h } = fit($("dopplerCanvas"));
+  ctx.clearRect(0, 0, w, h);
+
+  // Heatmap region.
+  const padL = 60, padR = 16, padT = 28, padB = 30;
+  const plotW = w - padL - padR;
+  const plotH = h - padT - padB;
+  const RANGE_BINS = 64;
+  const DOP_BINS = 32;
+  const cellW = plotW / RANGE_BINS;
+  const cellH = plotH / DOP_BINS;
+
+  // Synthesize heatmap.
+  // Strong zero-Doppler clutter row spread across all ranges; weak target spot at the chosen range/Doppler offset.
+  const personBin = Math.round((dopplerState.personRange / 200) * RANGE_BINS);
+  for (let r = 0; r < RANGE_BINS; r++) {
+    for (let d = 0; d < DOP_BINS; d++) {
+      // Clutter band centered at d = DOP_BINS/2.
+      const dCenter = DOP_BINS / 2;
+      const clutter = Math.exp(-Math.pow(d - dCenter, 2) / 1.6) * (0.4 + 0.6 * Math.exp(-Math.pow(r - 18, 2) / 80));
+      // Two breath spots at non-zero Doppler bins, symmetric around 0.
+      const tgt1 = Math.exp(-(Math.pow(r - personBin, 2) / 6 + Math.pow(d - (dCenter - 4), 2) / 2)) * dopplerState.breathEnergy;
+      const tgt2 = Math.exp(-(Math.pow(r - personBin, 2) / 6 + Math.pow(d - (dCenter + 4), 2) / 2)) * dopplerState.breathEnergy * 0.85;
+      const noise = Math.random() * 0.04;
+      const v = Math.min(1, clutter + tgt1 + tgt2 + noise);
+
+      // Heat colormap: paper -> teal -> orange.
+      let r0, g0, b0;
+      if (v < 0.5) {
+        const t = v / 0.5;
+        r0 = Math.round(251 + (47 - 251) * t);
+        g0 = Math.round(250 + (111 - 250) * t);
+        b0 = Math.round(246 + (115 - 246) * t);
+      } else {
+        const t = (v - 0.5) / 0.5;
+        r0 = Math.round(47 + (198 - 47) * t);
+        g0 = Math.round(111 + (77 - 111) * t);
+        b0 = Math.round(115 + (46 - 115) * t);
+      }
+      ctx.fillStyle = `rgb(${r0},${g0},${b0})`;
+      ctx.fillRect(padL + r * cellW, padT + d * cellH, cellW + 0.5, cellH + 0.5);
+    }
+  }
+
+  // Axes.
+  ctx.strokeStyle = COLOR.lineDark;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(padL, padT, plotW, plotH);
+  ctx.fillStyle = COLOR.muted;
+  ctx.font = "11px Helvetica, Arial, sans-serif";
+  ctx.fillText("range →", padL + plotW * 0.5 - 24, h - 10);
+  ctx.fillText("Doppler", 8, padT + plotH * 0.5);
+  ctx.fillText("(slow time)", 8, padT + plotH * 0.5 + 12);
+  ctx.fillText("0 m", padL - 4, padT + plotH + 14);
+  ctx.fillText("2 m", padL + plotW - 18, padT + plotH + 14);
+  ctx.fillText("zero D.", padL - 50, padT + plotH * 0.5 + 4);
+
+  // Highlight the target.
+  ctx.strokeStyle = COLOR.accent;
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([3, 3]);
+  ctx.strokeRect(padL + (personBin - 4) * cellW, padT + ((DOP_BINS / 2) - 8) * cellH, 8 * cellW, 16 * cellH);
+  ctx.setLineDash([]);
+  ctx.fillStyle = COLOR.accent;
+  ctx.fillText("breathing target", padL + (personBin - 4) * cellW, padT - 6);
+
+  $("personRangeOut").textContent = `${(dopplerState.personRange / 100).toFixed(2)} m`;
+  $("breathEnergyOut").textContent = dopplerState.breathEnergy.toFixed(2);
+}
+
+$("personRangeSlider").addEventListener("input", (e) => { dopplerState.personRange = Number(e.target.value); drawDoppler(); });
+$("breathEnergySlider").addEventListener("input", (e) => { dopplerState.breathEnergy = Number(e.target.value); drawDoppler(); });
+
+//
+// =========================================================================
+//   § 9   breath + heart simulator
+// =========================================================================
+//
+const bhState = { breathRate: 14, heartRate: 68, heartAmp: 0.3, noise: 0.15 };
+
+function drawBreathHeart() {
+  const { ctx, w, h } = fit($("breathHeartCanvas"));
+  const plot = axes(ctx, w, h, { labelY: "phase (mm)", labelX: "time (s)" });
+
+  ctx.fillStyle = COLOR.muted;
+  ctx.font = "10px Helvetica, Arial, sans-serif";
+  for (let s = 0; s <= 10; s++) {
+    const x = plot.padL + (s / 10) * plot.plotW;
+    ctx.fillText(`${s}s`, x - 6, h - 18);
+  }
+
+  const N = 480;
+  const breath = [], heart = [], sum = [];
+  const breathHz = bhState.breathRate / 60;
+  const heartHz  = bhState.heartRate / 60;
+  for (let i = 0; i < N; i++) {
+    const t = (i / N) * 10;
+    const b = 3.0 * Math.sin(TAU * breathHz * t);
+    const h = bhState.heartAmp * 10 * Math.sin(TAU * heartHz * t + Math.cos(TAU * breathHz * t) * 0.3);
+    const noise = bhState.noise * 4 * (Math.random() - 0.5);
+    breath.push(b);
+    heart.push(h);
+    sum.push(b + h + noise);
+  }
+
+  plotLine(ctx, breath, plot, w, h, { color: COLOR.accent2, width: 1.4, yMin: -6, yMax: 6, alpha: 0.45 });
+  plotLine(ctx, heart,  plot, w, h, { color: COLOR.accent3, width: 1.2, yMin: -6, yMax: 6, alpha: 0.5 });
+  plotLine(ctx, sum,    plot, w, h, { color: COLOR.inkStrong, width: 2.4, yMin: -6, yMax: 6 });
+
+  $("bhBreathRateOut").textContent = `${bhState.breathRate.toFixed(1)} BPM`;
+  $("bhHeartRateOut").textContent  = `${bhState.heartRate} BPM`;
+  $("bhHeartAmpOut").textContent   = `${bhState.heartAmp.toFixed(2)} mm`;
+  $("bhNoiseOut").textContent      = bhState.noise.toFixed(2);
+}
+
+["bhBreathRate","bhHeartRate","bhHeartAmp","bhNoise"].forEach((id) => {
+  $(id).addEventListener("input", (e) => {
+    const v = Number(e.target.value);
+    if (id === "bhBreathRate") bhState.breathRate = v;
+    if (id === "bhHeartRate")  bhState.heartRate  = v;
+    if (id === "bhHeartAmp")   bhState.heartAmp   = v;
+    if (id === "bhNoise")      bhState.noise      = v;
+    drawBreathHeart();
+  });
+});
+
+//
+// =========================================================================
+//   § 10   filter response: Q vs settling
+// =========================================================================
+//
+const filterState = { Q: 6.0 };
+const F0 = 0.30; // Hz, breath band center
+
+// Two-pole bandpass biquad: H(s) = (s/Q) / (s² + s/Q + ω0²)
+// Discretize via bilinear at Fs = 20 Hz.
+function biquadBP(Q, f0, fs) {
+  const w0 = TAU * f0 / fs;
+  const alpha = Math.sin(w0) / (2 * Q);
+  const cosw0 = Math.cos(w0);
+  const b0 = alpha;
+  const b1 = 0;
+  const b2 = -alpha;
+  const a0 = 1 + alpha;
+  const a1 = -2 * cosw0;
+  const a2 = 1 - alpha;
+  return { b0: b0 / a0, b1: b1 / a0, b2: b2 / a0, a1: a1 / a0, a2: a2 / a0 };
+}
+
+function freqResponse(coef, fs, n = 256) {
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const f = (i / n) * (fs / 2);
+    const w = TAU * f / fs;
+    const cosw = Math.cos(w), sinw = Math.sin(w);
+    const cos2 = Math.cos(2 * w), sin2 = Math.sin(2 * w);
+    const numRe = coef.b0 + coef.b1 * cosw + coef.b2 * cos2;
+    const numIm = -(coef.b1 * sinw + coef.b2 * sin2);
+    const denRe = 1 + coef.a1 * cosw + coef.a2 * cos2;
+    const denIm = -(coef.a1 * sinw + coef.a2 * sin2);
+    const numMag = Math.sqrt(numRe * numRe + numIm * numIm);
+    const denMag = Math.sqrt(denRe * denRe + denIm * denIm);
+    out.push(numMag / denMag);
+  }
+  return out;
+}
+
+function stepResponse(coef, n) {
+  const out = [];
+  let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+  for (let i = 0; i < n; i++) {
+    const x = 1; // step input
+    const y = coef.b0 * x + coef.b1 * x1 + coef.b2 * x2 - coef.a1 * y1 - coef.a2 * y2;
+    out.push(y);
+    x2 = x1; x1 = x;
+    y2 = y1; y1 = y;
+  }
+  return out;
+}
+
+function drawFilter() {
+  const { ctx, w, h } = fit($("filterCanvas"));
+  ctx.clearRect(0, 0, w, h);
+  const splitX = w * 0.5;
+
+  const fs = 20;
+  const coef = biquadBP(filterState.Q, F0, fs);
+
+  // ---- left: frequency response ----
+  const padL = 50, padT = 28, padB = 40;
+  const plotH = h - padT - padB;
+  const plotW = splitX - padL - 16;
+  ctx.strokeStyle = COLOR.lineDark;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(padL, padT); ctx.lineTo(padL, h - padB); ctx.lineTo(splitX - 16, h - padB);
+  ctx.stroke();
+  ctx.fillStyle = COLOR.muted;
+  ctx.font = "11px Helvetica, Arial, sans-serif";
+  ctx.fillText("|H(f)|, frequency response", padL + 4, padT - 6);
+  ctx.fillText("0 Hz", padL - 14, h - padB + 14);
+  ctx.fillText("3 Hz", splitX - 32, h - padB + 14);
+
+  const fr = freqResponse(coef, fs, 200);
+  // Limit visible to 0–3 Hz.
+  const fMaxBin = Math.round(200 * (3 / (fs / 2)));
+  ctx.strokeStyle = COLOR.accent;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let i = 0; i <= fMaxBin; i++) {
+    const x = padL + (i / fMaxBin) * plotW;
+    const y = h - padB - fr[i] * plotH * 0.92;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // Mark breath band 0.1-0.5 Hz and heart band 0.8-2.0 Hz as dim shading.
+  function band(f1, f2, color) {
+    const x1 = padL + (f1 / 3) * plotW;
+    const x2 = padL + (f2 / 3) * plotW;
+    ctx.fillStyle = color;
+    ctx.fillRect(x1, padT, x2 - x1, plotH);
+  }
+  band(0.1, 0.5, "rgba(47,111,115,0.10)");
+  band(0.8, 2.0, "rgba(107,91,149,0.10)");
+  ctx.fillStyle = COLOR.muted;
+  ctx.fillText("breath", padL + 8, padT + 12);
+  ctx.fillText("heart",  padL + (0.8 / 3) * plotW + 4, padT + 12);
+
+  // ---- right: step response ----
+  const rPadL = splitX + 20, rPadR = 14;
+  const rPlotW = w - rPadL - rPadR;
+  ctx.beginPath();
+  ctx.moveTo(rPadL, padT); ctx.lineTo(rPadL, h - padB); ctx.lineTo(w - rPadR, h - padB);
+  ctx.stroke();
+  ctx.fillText("step response (time domain)", rPadL + 4, padT - 6);
+  ctx.fillText("0 s", rPadL - 12, h - padB + 14);
+  ctx.fillText("12 s", w - rPadR - 22, h - padB + 14);
+
+  const stepN = Math.round(12 * fs);
+  const sr = stepResponse(coef, stepN);
+  const srMax = Math.max(...sr.map(Math.abs)) || 1;
+  // zero line.
+  const yZero = padT + plotH * 0.5;
+  ctx.strokeStyle = "rgba(145,136,121,0.4)";
+  ctx.beginPath();
+  ctx.moveTo(rPadL, yZero); ctx.lineTo(w - rPadR, yZero);
+  ctx.stroke();
+
+  ctx.strokeStyle = COLOR.accent2;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let i = 0; i < stepN; i++) {
+    const x = rPadL + (i / (stepN - 1)) * rPlotW;
+    const y = yZero - (sr[i] / srMax) * plotH * 0.45;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // settling-time marker
+  const settleS = 2 * filterState.Q / (TAU * F0);
+  const settleX = rPadL + (Math.min(settleS, 12) / 12) * rPlotW;
+  ctx.strokeStyle = COLOR.accent;
+  ctx.setLineDash([3, 3]);
+  ctx.beginPath();
+  ctx.moveTo(settleX, padT); ctx.lineTo(settleX, h - padB);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = COLOR.accent;
+  ctx.fillText(`~ ${settleS.toFixed(1)} s settling`, Math.min(settleX + 4, w - rPadR - 80), padT + 12);
+
+  $("settleRead").textContent = `${settleS.toFixed(1)} s`;
+  $("bw3dbRead").textContent  = `${(F0 / filterState.Q).toFixed(2)} Hz`;
+}
+
+$("qSlider").addEventListener("input", (e) => {
+  filterState.Q = Number(e.target.value);
+  $("qOut").textContent = filterState.Q.toFixed(1);
+  drawFilter();
+});
+
+//
+// =========================================================================
+//   § 11   firmware pipeline
+// =========================================================================
+//
+// Stage definitions: each is a node in the diagram, with summary + reconstructed C.
+const STAGES = [
+  {
+    key: "acq",
+    label: "1. Acquisition",
+    summary:
+      "An interrupt fires every 50 ms (20 Hz frame rate). The radar front-end has captured 32 chirps × 256 range samples × 4 antennas of complex IF data into shared SRAM. The firmware's main loop wakes and runs everything below in sequence, then sleeps.",
+    code: `<span class="com">// FUN_0000647c - main scheduler.</span>
+<span class="kw">while</span> (running) {
+  <span class="kw">if</span> (frame_ready_flag == <span class="num">1</span>) {       <span class="com">// set by ISR each radar frame</span>
+    <span class="kw">if</span> (mode == <span class="num">0</span>) <span class="fn">process_normal</span>();   <span class="com">// breath/heart pipeline</span>
+    <span class="kw">else</span>          <span class="fn">process_raw_dump</span>(); <span class="com">// emits raw range-Doppler matrices</span>
+    frame_ready_flag = <span class="num">0</span>;
+  }
+  <span class="fn">delay_ms</span>(<span class="num">10</span>);
+}`,
+  },
+  {
+    key: "rangefft",
+    label: "2. Range FFT",
+    summary:
+      "For every chirp on every antenna, the on-chip hardware FFT engine at 0x40022000 transforms 256 IF samples into 256 complex range bins. This separates targets by distance — the wall, the chair, the body all land in different bins.",
+    code: `<span class="com">// FUN_00004d1c - 32 contiguous FFTs of length 256 per antenna.</span>
+<span class="ty">void</span> <span class="fn">range_fft</span>(<span class="ty">int16_t</span> *if_buf, <span class="ty">cplx_t</span> *range_out) {
+  <span class="kw">for</span> (<span class="ty">int</span> chirp = <span class="num">0</span>; chirp &lt; <span class="num">32</span>; chirp++) {
+    <span class="fn">hw_fft_setup</span>(<span class="num">256</span>, INPUT_INT16, OUTPUT_CPLX32);
+    <span class="fn">hw_fft_run</span>(if_buf + chirp * <span class="num">256</span>,
+               range_out + chirp * <span class="num">256</span>);
+  }
+}
+<span class="com">// hardware FFT peripheral at 0x40022000, ~few µs per 256-pt FFT.</span>`,
+  },
+  {
+    key: "dopplerfft",
+    label: "3. Doppler FFT",
+    summary:
+      "Across the 32 chirps of a single frame, for each of the 256 range bins (or some active subset), a second FFT separates static clutter from motion. This is slow-time analysis. The output is a 256 × 32 range-Doppler matrix per antenna.",
+    code: `<span class="com">// FUN_00009994 - 120 FFTs of length 32 across slow time.</span>
+<span class="ty">void</span> <span class="fn">doppler_fft</span>(<span class="ty">cplx_t</span> *range_in, <span class="ty">cplx_t</span> *rd_out) {
+  <span class="kw">for</span> (<span class="ty">int</span> r = <span class="num">0</span>; r &lt; ACTIVE_RANGE_BINS; r++) {
+    <span class="ty">cplx_t</span> tmp[<span class="num">32</span>];
+    <span class="kw">for</span> (<span class="ty">int</span> c = <span class="num">0</span>; c &lt; <span class="num">32</span>; c++)
+      tmp[c] = range_in[c * <span class="num">256</span> + r];      <span class="com">// gather across chirps</span>
+    <span class="fn">hw_fft_run_32</span>(tmp, rd_out + r * <span class="num">32</span>);
+  }
+}`,
+  },
+  {
+    key: "mag",
+    label: "4. Magnitude² + shift",
+    summary:
+      "Magnitude-squared of the complex range-Doppler matrix, then an FFT shift to put zero-Doppler in the centre instead of bin 0. After this, bright stripe in the middle = stationary clutter; bright spots off-centre = motion.",
+    code: `<span class="com">// FUN_00002a88 + FUN_00004b98</span>
+<span class="ty">void</span> <span class="fn">magsq_and_shift</span>(<span class="ty">cplx_t</span> *rd, <span class="ty">int32_t</span> *mag, <span class="ty">int</span> R, <span class="ty">int</span> D) {
+  <span class="kw">for</span> (<span class="ty">int</span> r = <span class="num">0</span>; r &lt; R; r++)
+    <span class="kw">for</span> (<span class="ty">int</span> d = <span class="num">0</span>; d &lt; D; d++) {
+      <span class="ty">int</span> ds = (d + D / <span class="num">2</span>) % D;        <span class="com">// fft-shift</span>
+      <span class="ty">cplx_t</span> v = rd[r * D + d];
+      mag[r * D + ds] = v.re * v.re + v.im * v.im;
+    }
+}`,
+  },
+  {
+    key: "tgt",
+    label: "5. Target select",
+    summary:
+      "A CFAR-like detector scans the range-Doppler matrix for the strongest non-zero-Doppler peak — the breathing target. The selected range bin is the only thing the next stage cares about. Subsequent frames adapt this bin via a leaky integrator with α ≈ 0.9, which prevents jitter.",
+    code: `<span class="com">// FUN_0000850c (CFAR) + FUN_0000428c (smooth bin tracker)</span>
+<span class="ty">int</span> <span class="fn">select_target_bin</span>(<span class="ty">int32_t</span> *mag, <span class="ty">int</span> R, <span class="ty">int</span> D) {
+  <span class="ty">int</span> best_r = <span class="num">0</span>, best = <span class="num">0</span>;
+  <span class="kw">for</span> (<span class="ty">int</span> r = <span class="num">0</span>; r &lt; R; r++) {
+    <span class="ty">int32_t</span> sum = <span class="num">0</span>;
+    <span class="kw">for</span> (<span class="ty">int</span> d = <span class="num">0</span>; d &lt; D; d++) {
+      <span class="kw">if</span> (<span class="fn">abs</span>(d - D/<span class="num">2</span>) &lt; <span class="num">2</span>) <span class="kw">continue</span>;        <span class="com">// skip clutter band</span>
+      sum += mag[r * D + d];
+    }
+    <span class="kw">if</span> (sum &gt; best) { best = sum; best_r = r; }
+  }
+  smoothed_bin = <span class="num">0.9f</span> * smoothed_bin + <span class="num">0.1f</span> * best_r;
+  <span class="kw">return</span> (<span class="ty">int</span>)smoothed_bin;
+}`,
+  },
+  {
+    key: "phase",
+    label: "6. Phase",
+    summary:
+      "At the selected range bin, take the complex value (averaged across 30 adjacent fine bins for SNR), compute atan2 to get a wrapped phase. This is the instantaneous phase of the chest's range cell, in [−π, π].",
+    code: `<span class="com">// FUN_00001c6c calls atan2 30 times per frame for SNR averaging.</span>
+<span class="ty">float</span> <span class="fn">extract_phase</span>(<span class="ty">cplx_t</span> *rd, <span class="ty">int</span> bin) {
+  <span class="ty">float</span> sum_re = <span class="num">0</span>, sum_im = <span class="num">0</span>;
+  <span class="kw">for</span> (<span class="ty">int</span> k = -<span class="num">15</span>; k &lt; <span class="num">15</span>; k++) {
+    <span class="ty">cplx_t</span> v = rd[(bin + k) * <span class="num">32</span> + DOPPLER_BIN];
+    sum_re += v.re;
+    sum_im += v.im;
+  }
+  <span class="kw">return</span> <span class="fn">atan2f</span>(sum_im, sum_re);  <span class="com">// returns phi in [-π, π]</span>
+}`,
+  },
+  {
+    key: "unwrap",
+    label: "7. Unwrap & Δφ",
+    summary:
+      "Phase is unwrapped against the previous frame so consecutive samples never differ by more than π. Then a first difference: Δφ = φ[n] − φ[n−1]. This Δφ is the per-frame chest-velocity proxy that the firmware ships as the FIRST float of every 0x0A13 frame — what the library labels (slightly misleadingly) total_phase.",
+    code: `<span class="ty">static</span> <span class="ty">float</span> phi_prev = <span class="num">0</span>;
+
+<span class="ty">float</span> <span class="fn">unwrap_and_diff</span>(<span class="ty">float</span> phi_now) {
+  <span class="ty">float</span> d = phi_now - phi_prev;
+  <span class="kw">if</span> (d &gt;  M_PI) d -= <span class="num">2</span> * M_PI;
+  <span class="kw">if</span> (d &lt; -M_PI) d += <span class="num">2</span> * M_PI;
+  phi_prev = phi_now;
+  <span class="kw">return</span> d;                       <span class="com">// the "total_phase" sent over UART</span>
+}`,
+  },
+  {
+    key: "iir",
+    label: "8. IIR cascades",
+    summary:
+      "The Δφ stream is fed in parallel to TWO biquad cascades. Four sections band-pass-tuned for breath (~0.3 Hz), eight sections for heart (~1 Hz). Their outputs are the SECOND and THIRD floats of every 0x0A13 frame. Coefficients live at flash 0x00011B10 — past the end of our OTA blob.",
+    code: `<span class="com">// FUN_00006b20 (4 sections) and FUN_00006bf0 (8 sections).</span>
+<span class="ty">float</span> <span class="fn">biquad_cascade</span>(<span class="ty">float</span> x, <span class="ty">int</span> N,
+                       <span class="kw">const</span> <span class="ty">float</span> *coef, <span class="ty">float</span> *state) {
+  <span class="kw">for</span> (<span class="ty">int</span> i = <span class="num">0</span>; i &lt; N; i++) {
+    <span class="ty">const</span> <span class="ty">float</span> b0 = coef[i*<span class="num">5</span>+<span class="num">0</span>], b1 = coef[i*<span class="num">5</span>+<span class="num">1</span>],
+                b2 = coef[i*<span class="num">5</span>+<span class="num">2</span>], a1 = coef[i*<span class="num">5</span>+<span class="num">3</span>], a2 = coef[i*<span class="num">5</span>+<span class="num">4</span>];
+    <span class="ty">float</span> y = b0*x + state[i*<span class="num">2</span>+<span class="num">0</span>];
+    state[i*<span class="num">2</span>+<span class="num">0</span>] = b1*x - a1*y + state[i*<span class="num">2</span>+<span class="num">1</span>];
+    state[i*<span class="num">2</span>+<span class="num">1</span>] = b2*x - a2*y;
+    x = y;
+  }
+  <span class="kw">return</span> x;
+}
+<span class="com">// breath_phase = biquad_cascade(d_phi, 4, breath_coef, breath_state);</span>
+<span class="com">// heart_phase  = biquad_cascade(d_phi, 8, heart_coef,  heart_state);</span>`,
+  },
+  {
+    key: "uartwave",
+    label: "9. UART (waveform)",
+    summary:
+      "Every frame, the three floats [Δφ, breath_phase, heart_phase] are packaged into a 0x0A13 frame and shipped over UART at 115 200 baud. This path has no buffering — the host sees motion within ~50 ms.",
+    code: `<span class="com">// FUN_00001ad0 - frame builder.</span>
+<span class="ty">void</span> <span class="fn">send_phases</span>(<span class="ty">float</span> dphi, <span class="ty">float</span> breath, <span class="ty">float</span> heart) {
+  <span class="ty">float</span> payload[<span class="num">3</span>] = { dphi, breath, heart };
+  <span class="fn">send_frame</span>(<span class="num">0x0A13</span>, (<span class="ty">uint8_t</span>*)payload, <span class="kw">sizeof</span>(payload));
+}
+<span class="com">// frame format: 01 [id_hi id_lo] [len_hi len_lo] [type_hi type_lo]</span>
+<span class="com">//                  [head_xor] [12 bytes data] [data_xor]</span>`,
+  },
+  {
+    key: "ring",
+    label: "10. 128-sample ring",
+    summary:
+      "Separately from the UART path, breath_phase is pushed into a 128-sample shift register (and heart_phase into another). Each frame shifts the buffer by one sample. The ring takes 128 / 20 Hz = 6.4 seconds to fill once.",
+    code: `<span class="com">// circular shift on every frame.</span>
+<span class="ty">static</span> <span class="ty">int16_t</span> breath_ring[<span class="num">128</span>];
+<span class="ty">static</span> <span class="ty">int</span>     ring_count;
+
+<span class="ty">void</span> <span class="fn">push_breath</span>(<span class="ty">float</span> bp) {
+  <span class="fn">memmove</span>(breath_ring, breath_ring + <span class="num">1</span>, <span class="num">127</span> * <span class="kw">sizeof</span>(<span class="ty">int16_t</span>));
+  breath_ring[<span class="num">127</span>] = (<span class="ty">int16_t</span>)<span class="fn">roundf</span>(bp * <span class="num">100</span>.f);
+  <span class="kw">if</span> (ring_count &lt; <span class="num">128</span>) ring_count++;
+}`,
+  },
+  {
+    key: "fftbpm",
+    label: "11. BPM FFT",
+    summary:
+      "The 128-sample ring is zero-padded to 256 and fed to a 256-point FFT. For breath, peak-pick across bins 1–7 (covering 0.08–0.55 Hz at Fs = 20 Hz). For heart, peak-pick across bins 12–30 (0.94–2.34 Hz, i.e. 56–141 BPM). The peak's bin index, scaled to BPM, is the rate output.",
+    code: `<span class="com">// FUN_000049a4 - hardware FFT, 256-pt.</span>
+<span class="ty">float</span> <span class="fn">compute_bpm</span>(<span class="ty">int16_t</span> *ring, <span class="ty">int</span> bin_lo, <span class="ty">int</span> bin_hi, <span class="ty">float</span> fs) {
+  <span class="ty">float</span> spec[<span class="num">256</span>];
+  <span class="fn">hw_fft_pad_run</span>(ring, <span class="num">128</span>, <span class="num">256</span>, spec);    <span class="com">// zero-pad to 256</span>
+  <span class="ty">int</span> peak = bin_lo;
+  <span class="kw">for</span> (<span class="ty">int</span> k = bin_lo + <span class="num">1</span>; k &lt;= bin_hi; k++)
+    <span class="kw">if</span> (spec[k] &gt; spec[peak]) peak = k;
+  <span class="kw">return</span> peak * (fs / <span class="num">256</span>) * <span class="num">60</span>.f;        <span class="com">// bin index → BPM</span>
+}`,
+  },
+  {
+    key: "uartbpm",
+    label: "12. UART (BPM)",
+    summary:
+      "BPM values ship as 0x0A14 (breath) and 0x0A15 (heart). They look smooth and reliable on the wire — but they only update meaningfully after the 6.4-second ring has filled, and even then they're biased toward the past 6 s of average rate.",
+    code: `<span class="ty">void</span> <span class="fn">send_bpm</span>(<span class="ty">float</span> breath_bpm, <span class="ty">float</span> heart_bpm) {
+  <span class="fn">send_frame</span>(<span class="num">0x0A14</span>, (<span class="ty">uint8_t</span>*)&breath_bpm, <span class="num">4</span>);
+  <span class="fn">send_frame</span>(<span class="num">0x0A15</span>, (<span class="ty">uint8_t</span>*)&heart_bpm,  <span class="num">4</span>);
+}
+<span class="com">// the device emits these at 20 Hz from the moment the ring fills,</span>
+<span class="com">// regardless of whether they're meaningful. caveat emptor.</span>`,
+  },
+];
+
+function buildPipeline() {
+  // Tab buttons.
+  const tabs = $("stageTabs");
+  STAGES.forEach((s, i) => {
+    const btn = document.createElement("button");
+    btn.textContent = s.label;
+    btn.dataset.idx = String(i);
+    btn.addEventListener("click", () => selectStage(i));
+    tabs.appendChild(btn);
+  });
+
+  // SVG diagram.
+  const host = $("pipelineHost");
+  const svgNS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(svgNS, "svg");
+  svg.setAttribute("viewBox", "0 0 1200 340");
+  svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+  svg.style.width = "100%";
+  svg.style.height = "100%";
+  // Box geometry: row 1 = stages 1-6, row 2 = stages 7-12.
+  const layout = [
+    { r: 0, c: 0 }, { r: 0, c: 1 }, { r: 0, c: 2 }, { r: 0, c: 3 }, { r: 0, c: 4 }, { r: 0, c: 5 },
+    { r: 1, c: 5 }, { r: 1, c: 4 }, { r: 1, c: 3 }, { r: 1, c: 2 }, { r: 1, c: 1 }, { r: 1, c: 0 },
+  ];
+  const COL_W = 195, ROW_Y = [40, 220], BOX_W = 180, BOX_H = 80, X0 = 16;
+
+  // Arrows definition.
+  const defs = document.createElementNS(svgNS, "defs");
+  defs.innerHTML = `
+    <marker id="ah" viewBox="0 -5 10 10" refX="9" refY="0" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,-5L10,0L0,5" fill="${COLOR.lineDark}"/>
+    </marker>
+    <marker id="ah-active" viewBox="0 -5 10 10" refX="9" refY="0" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,-5L10,0L0,5" fill="${COLOR.accent}"/>
+    </marker>`;
+  svg.appendChild(defs);
+
+  // Boxes.
+  STAGES.forEach((s, i) => {
+    const { r, c } = layout[i];
+    const x = X0 + c * COL_W;
+    const y = ROW_Y[r];
+    const g = document.createElementNS(svgNS, "g");
+    g.setAttribute("data-idx", String(i));
+    g.style.cursor = "pointer";
+    g.addEventListener("click", () => selectStage(i));
+
+    const rect = document.createElementNS(svgNS, "rect");
+    rect.setAttribute("x", x);
+    rect.setAttribute("y", y);
+    rect.setAttribute("width", BOX_W);
+    rect.setAttribute("height", BOX_H);
+    rect.setAttribute("fill", "#fffdf8");
+    rect.setAttribute("stroke", COLOR.lineDark);
+    rect.setAttribute("stroke-width", "1.4");
+    rect.classList.add("pipeline-box");
+    g.appendChild(rect);
+
+    const lab1 = document.createElementNS(svgNS, "text");
+    lab1.setAttribute("x", x + 12);
+    lab1.setAttribute("y", y + 22);
+    lab1.setAttribute("font-family", "Helvetica Neue, Arial, sans-serif");
+    lab1.setAttribute("font-size", "11");
+    lab1.setAttribute("font-weight", "800");
+    lab1.setAttribute("fill", COLOR.accent);
+    lab1.textContent = s.label.split(".")[0];
+    g.appendChild(lab1);
+
+    const lab2 = document.createElementNS(svgNS, "text");
+    lab2.setAttribute("x", x + 12);
+    lab2.setAttribute("y", y + 42);
+    lab2.setAttribute("font-family", "Helvetica Neue, Arial, sans-serif");
+    lab2.setAttribute("font-size", "13");
+    lab2.setAttribute("font-weight", "700");
+    lab2.setAttribute("fill", COLOR.inkStrong);
+    lab2.textContent = s.label.split(". ")[1] || s.label;
+    g.appendChild(lab2);
+
+    // Tag for outputs.
+    if (i === 8) {
+      const t = document.createElementNS(svgNS, "text");
+      t.setAttribute("x", x + 12);
+      t.setAttribute("y", y + 64);
+      t.setAttribute("font-family", "SFMono-Regular, monospace");
+      t.setAttribute("font-size", "10");
+      t.setAttribute("fill", COLOR.muted);
+      t.textContent = "0x0A13 (3 floats / frame)";
+      g.appendChild(t);
+    }
+    if (i === 11) {
+      const t = document.createElementNS(svgNS, "text");
+      t.setAttribute("x", x + 12);
+      t.setAttribute("y", y + 64);
+      t.setAttribute("font-family", "SFMono-Regular, monospace");
+      t.setAttribute("font-size", "10");
+      t.setAttribute("fill", COLOR.muted);
+      t.textContent = "0x0A14 / 0x0A15";
+      g.appendChild(t);
+    }
+
+    svg.appendChild(g);
+  });
+
+  // Arrows: 1→2→3→4→5→6→7→8→9 along top row; 8→10→11→12 detour to bottom row.
+  function arrow(x1, y1, x2, y2, idx) {
+    const line = document.createElementNS(svgNS, "path");
+    const d = `M${x1},${y1} L${x2},${y2}`;
+    line.setAttribute("d", d);
+    line.setAttribute("fill", "none");
+    line.setAttribute("stroke", COLOR.lineDark);
+    line.setAttribute("stroke-width", "1.6");
+    line.setAttribute("marker-end", "url(#ah)");
+    line.dataset.from = String(idx);
+    line.classList.add("pipeline-arrow");
+    svg.appendChild(line);
+    return line;
+  }
+
+  // Top-row chain (left → right).
+  for (let i = 0; i < 5; i++) {
+    const xa = X0 + i * COL_W + BOX_W;
+    const xb = X0 + (i + 1) * COL_W;
+    arrow(xa, ROW_Y[0] + BOX_H / 2, xb - 2, ROW_Y[0] + BOX_H / 2, i);
+  }
+  // 6 → 7 (top row 5 → bottom row 5: same column, downward).
+  arrow(X0 + 5 * COL_W + BOX_W / 2, ROW_Y[0] + BOX_H, X0 + 5 * COL_W + BOX_W / 2, ROW_Y[1] - 4, 5);
+
+  // Bottom-row chain (right → left).
+  for (let i = 0; i < 5; i++) {
+    const xa = X0 + (5 - i) * COL_W;
+    const xb = X0 + (5 - i - 1) * COL_W + BOX_W;
+    arrow(xa - 2, ROW_Y[1] + BOX_H / 2, xb, ROW_Y[1] + BOX_H / 2, 6 + i);
+  }
+  // Branch: 7 (= 8 in original numbering) sends to UART (9) AND ring (10).
+  // We've already drawn 8→9 and 8→10 implicitly via the chain. Add a thin "branch" indicator.
+  // Done.
+
+  host.appendChild(svg);
+  selectStage(0);
+}
+
+function selectStage(i) {
+  document.querySelectorAll("#stageTabs button").forEach((b, k) => {
+    b.classList.toggle("active", k === i);
+  });
+  document.querySelectorAll(".pipeline-box").forEach((rect, k) => {
+    rect.setAttribute("fill", k === i ? "#ffefe7" : "#fffdf8");
+    rect.setAttribute("stroke", k === i ? COLOR.accent : COLOR.lineDark);
+    rect.setAttribute("stroke-width", k === i ? "2.2" : "1.4");
+  });
+  document.querySelectorAll(".pipeline-arrow").forEach((line) => {
+    const fromIdx = Number(line.dataset.from);
+    const isHot = fromIdx === i || fromIdx === i - 1;
+    line.setAttribute("stroke", isHot ? COLOR.accent : COLOR.lineDark);
+    line.setAttribute("stroke-width", isHot ? "2.4" : "1.6");
+    line.setAttribute("marker-end", isHot ? "url(#ah-active)" : "url(#ah)");
+  });
+  $("stageSummary").textContent = STAGES[i].summary;
+  $("stageCode").innerHTML = STAGES[i].code;
+}
+
+//
+// =========================================================================
+//   § 12   latency: three views of the same input
+// =========================================================================
+//
+const latencyState = { iirSeconds: 5, running: false, t0: null, frame: 0 };
+
+function drawLatency() {
+  const { ctx, w, h } = fit($("latencyCanvas"));
+  ctx.clearRect(0, 0, w, h);
+
+  // Three stacked panes.
+  const padL = 60, padR = 16;
+  const panes = 3;
+  const paneH = (h - 30) / panes;
+  const labels = ["raw total_phase (UART now)", "firmware breath_phase (IIR settling)", "BPM ring (filling 128 samples)"];
+  const colors = [COLOR.accent, COLOR.accent2, COLOR.accent3];
+
+  // Time axis: 0 to 12 seconds.
+  const Tmax = 12;
+  const fs = 30;                 // simulation step
+  const N = Tmax * fs;
+
+  // Compute current time t.
+  let t = 0;
+  if (latencyState.running && latencyState.t0 != null) {
+    t = (performance.now() - latencyState.t0) / 1000;
+    if (t >= Tmax) { t = Tmax; latencyState.running = false; }
+  }
+
+  // Synthetic chest motion.
+  const chest = (s) => 3 * Math.sin(TAU * 0.25 * s) + 0.4 * Math.sin(TAU * 1.1 * s);
+
+  // Pane 1: raw signal up to t.
+  // Pane 2: low-pass with time constant tau = iirSeconds/3 (rough proxy for the IIR's settling).
+  const tau = Math.max(0.1, latencyState.iirSeconds / 3);
+  const lpAlpha = 1 - Math.exp(-1 / (fs * tau));
+
+  let lp = 0;
+  const rawPts = [], lpPts = [];
+  for (let i = 0; i < N; i++) {
+    const ts = i / fs;
+    const v = chest(ts);
+    rawPts.push(v);
+    if (i === 0) lp = 0;
+    lp = lpAlpha * v + (1 - lpAlpha) * lp;
+    lpPts.push(lp);
+  }
+
+  // Draw each pane.
+  for (let p = 0; p < 3; p++) {
+    const yTop = 16 + p * paneH;
+    const yBot = yTop + paneH - 14;
+    ctx.strokeStyle = COLOR.lineDark;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(padL, yTop); ctx.lineTo(padL, yBot); ctx.lineTo(w - padR, yBot);
+    ctx.stroke();
+    ctx.fillStyle = COLOR.muted;
+    ctx.font = "11px Helvetica, Arial, sans-serif";
+    ctx.fillText(labels[p], padL + 4, yTop + 10);
+
+    // Time tick at t.
+    const xT = padL + (t / Tmax) * (w - padL - padR);
+    ctx.strokeStyle = COLOR.line;
+    ctx.setLineDash([2, 4]);
+    ctx.beginPath();
+    ctx.moveTo(xT, yTop); ctx.lineTo(xT, yBot);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Plot.
+    const series = p === 0 ? rawPts : (p === 1 ? lpPts : null);
+    if (series) {
+      ctx.strokeStyle = colors[p];
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      const showN = Math.max(1, Math.round((t / Tmax) * (N - 1)));
+      for (let i = 0; i <= showN; i++) {
+        const x = padL + (i / (N - 1)) * (w - padL - padR);
+        const y = yTop + (paneH - 14) / 2 - (series[i] / 5) * (paneH - 14) * 0.42;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    } else {
+      // Pane 3: BPM ring fill.
+      const fill = Math.min(1, t / 6.4);
+      const xR = padL + fill * (w - padL - padR);
+      ctx.fillStyle = "rgba(107,91,149,0.30)";
+      ctx.fillRect(padL, yTop + 12, xR - padL, paneH - 28);
+      ctx.strokeStyle = COLOR.accent3;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(xR, yTop + 12); ctx.lineTo(xR, yBot - 4);
+      ctx.stroke();
+
+      ctx.fillStyle = COLOR.muted;
+      ctx.font = "11px Helvetica, Arial, sans-serif";
+      ctx.fillText(`6.4 s`, padL + (6.4 / Tmax) * (w - padL - padR) + 4, yTop + 10);
+      // Mark full-fill threshold.
+      const xF = padL + (6.4 / Tmax) * (w - padL - padR);
+      ctx.strokeStyle = COLOR.accent3;
+      ctx.setLineDash([4, 3]);
+      ctx.beginPath();
+      ctx.moveTo(xF, yTop); ctx.lineTo(xF, yBot);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      ctx.fillStyle = COLOR.accent3;
+      ctx.fillText(`fill: ${(fill * 100).toFixed(0)}%`, padL + 6, yBot - 6);
+    }
+
+    // Time axis labels.
+    if (p === 2) {
+      ctx.fillStyle = COLOR.muted;
+      ctx.font = "10px Helvetica, Arial, sans-serif";
+      for (let s = 0; s <= 12; s += 2) {
+        const x = padL + (s / Tmax) * (w - padL - padR);
+        ctx.fillText(`${s}s`, x - 6, yBot + 12);
+      }
+    }
+  }
+
+  // Update readouts.
+  $("elapsedRead").textContent = `${t.toFixed(1)} s`;
+  const fillFrames = Math.min(128, Math.round(t * 20));
+  $("bufferRead").textContent = `${fillFrames}/128`;
+  $("bpmReadyRead").textContent = fillFrames >= 128 ? "yes" : "no";
+}
+
+$("iirSlider").addEventListener("input", (e) => {
+  latencyState.iirSeconds = Number(e.target.value);
+  $("iirOut").textContent = `${latencyState.iirSeconds.toFixed(1)} s`;
+  drawLatency();
+});
+$("latencyStart").addEventListener("click", () => {
+  latencyState.t0 = performance.now();
+  latencyState.running = true;
+});
+$("latencyReset").addEventListener("click", () => {
+  latencyState.running = false;
+  latencyState.t0 = null;
+  drawLatency();
+});
+
+function latencyTick() {
+  if (latencyState.running) {
+    drawLatency();
+  }
+  requestAnimationFrame(latencyTick);
+}
+
+//
+// =========================================================================
+//   § 13   the escape hatch: actual filter
+// =========================================================================
+//
+const escState = { maxStep: 0.7, alpha: 0.15 };
+
+function drawEscape() {
+  const { ctx, w, h } = fit($("escapeCanvas"));
+  const plot = axes(ctx, w, h, { labelY: "phase (units)", labelX: "time (s)" });
+  ctx.fillStyle = COLOR.muted;
+  ctx.font = "10px Helvetica, Arial, sans-serif";
+  for (let s = 0; s <= 10; s++) {
+    const x = plot.padL + (s / 10) * plot.plotW;
+    ctx.fillText(`${s}s`, x - 6, h - 18);
+  }
+
+  // Synthetic input: breath + heart + occasional spike.
+  const fs = 20;
+  const N = 10 * fs; // 10 seconds at 20 Hz
+  const truth = [], firmware = [], smooth = [];
+  let lp = 0, sm = 0;
+  // Firmware proxy: heavy low-pass + ringing approximation.
+  let fwLp = 0;
+  const tau_fw = 1.6; // proxy for IIR settling
+  const a_fw = 1 - Math.exp(-1 / (fs * tau_fw));
+  for (let i = 0; i < N; i++) {
+    const t = i / fs;
+    const truth_v = 0.7 * Math.sin(TAU * 0.25 * t) + 0.05 * Math.sin(TAU * 1.1 * t);
+    // raw: truth + spikes + noise.
+    let raw = truth_v + (Math.random() - 0.5) * 0.06;
+    if (i === 50 || i === 95 || i === 140) raw += (i % 2) ? 1.2 : -1.1;
+    truth.push(truth_v);
+    fwLp = a_fw * truth_v + (1 - a_fw) * fwLp;
+    firmware.push(fwLp);
+    // Slew + low-pass on raw.
+    const bounded = Math.max(sm - escState.maxStep, Math.min(sm + escState.maxStep, raw));
+    sm = escState.alpha * bounded + (1 - escState.alpha) * sm;
+    smooth.push(sm);
+  }
+  plotLine(ctx, truth,    plot, w, h, { color: "#aaa",          width: 1.4, yMin: -1.4, yMax: 1.4, alpha: 0.8 });
+  plotLine(ctx, firmware, plot, w, h, { color: COLOR.accent,    width: 2.0, yMin: -1.4, yMax: 1.4, alpha: 0.7 });
+  plotLine(ctx, smooth,   plot, w, h, { color: COLOR.inkStrong, width: 2.4, yMin: -1.4, yMax: 1.4 });
+}
+
+$("maxStepSlider").addEventListener("input", (e) => {
+  escState.maxStep = Number(e.target.value);
+  $("maxStepOut").textContent = escState.maxStep.toFixed(2);
+  drawEscape();
+});
+$("alphaSlider").addEventListener("input", (e) => {
+  escState.alpha = Number(e.target.value);
+  $("alphaOut").textContent = escState.alpha.toFixed(2);
+  drawEscape();
+});
+
+//
+// =========================================================================
+//   bootstrap
+// =========================================================================
+//
+function drawAll() {
+  drawChest();
+  drawLambda();
+  drawCw();
+  drawChirp();
+  drawRange();
+  drawComplex();
+  drawUnwrap();
+  drawDoppler();
+  drawBreathHeart();
+  drawFilter();
+  drawLatency();
+  drawEscape();
+}
+
+window.addEventListener("resize", drawAll);
+buildPipeline();
+drawAll();
+latencyTick();
+</script>
+</body>
+</html>
